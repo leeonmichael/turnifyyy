@@ -1,0 +1,238 @@
+<div class="dashboard">
+  <div class="dashboard-header">
+    <h1>Panel Administrativo</h1>
+  </div>
+
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-icon users"></div>
+      <div class="stat-number">{{ stats.total_users }}</div>
+      <div class="stat-label">Total Usuarios</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon clients"></div>
+      <div class="stat-number">{{ stats.total_clients }}</div>
+      <div class="stat-label">Clientes</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon employees"></div>
+      <div class="stat-number">{{ stats.total_employees }}</div>
+      <div class="stat-label">Empleados</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon turns"></div>
+      <div class="stat-number">{{ stats.turns_today }}</div>
+      <div class="stat-label">Turnos Hoy</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon active"></div>
+      <div class="stat-number">{{ stats.turns_active }}</div>
+      <div class="stat-label">Turnos Activos</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon attended"></div>
+      <div class="stat-number">{{ stats.turns_attended }}</div>
+      <div class="stat-label">Turnos Atendidos</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon cancelled"></div>
+      <div class="stat-number">{{ stats.turns_cancelled }}</div>
+      <div class="stat-label">Turnos Cancelados</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon presencial"></div>
+      <div class="stat-number">{{ stats.turns_presenciales }}</div>
+      <div class="stat-label">Turnos Presenciales</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon virtual"></div>
+      <div class="stat-number">{{ stats.turns_virtuales }}</div>
+      <div class="stat-label">Turnos Virtuales</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon time"></div>
+      <div class="stat-number">{{ stats.avg_attention_time }}<span style="font-size: 1rem; font-weight: 500;">min</span></div>
+      <div class="stat-label">Tiempo Prom. Atención</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon time"></div>
+      <div class="stat-number">{{ stats.avg_wait_time }}<span style="font-size: 1rem; font-weight: 500;">min</span></div>
+      <div class="stat-label">Tiempo Prom. Espera</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon docs"></div>
+      <div class="stat-number">{{ stats.pending_documents }}</div>
+      <div class="stat-label">Documentos Pendientes</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon docs"></div>
+      <div class="stat-number">{{ stats.approved_documents }}</div>
+      <div class="stat-label">Documentos Aprobados</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon docs"></div>
+      <div class="stat-number">{{ stats.rejected_documents }}</div>
+      <div class="stat-label">Documentos Rechazados</div>
+    </div>
+  </div>
+
+  <div class="charts-section">
+    <div class="chart-card">
+      <h3>Estado de Turnos</h3>
+      <canvas id="statusChart"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3>Tipos de Servicio</h3>
+      <canvas id="serviceChart"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3>Distribución de Usuarios</h3>
+      <canvas id="usersChart"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3>Horas de Mayor Demanda</h3>
+      <canvas id="hourlyChart"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3>Últimos 7 Días</h3>
+      <canvas id="dailyChart"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3>Servicios Más Solicitados</h3>
+      <canvas id="topServicesChart"></canvas>
+    </div>
+  </div>
+
+  <div class="employee-section">
+    <h2>Gestión de Empleados</h2>
+
+    <div class="employee-form">
+      <input type="text" [(ngModel)]="empUsername" name="empUsername" placeholder="Usuario" class="form-control" />
+      <input type="password" [(ngModel)]="empPassword" name="empPassword" placeholder="Contraseña" class="form-control" />
+      <input type="text" [(ngModel)]="empFullName" name="empFullName" placeholder="Nombre Completo" class="form-control" />
+      <select [(ngModel)]="empDocumentType" name="empDocumentType" class="form-control form-select">
+        <option value="CC">Cédula de Ciudadanía</option>
+        <option value="CE">Cédula de Extranjería</option>
+        <option value="PPT">PPT</option>
+        <option value="PA">Pasaporte</option>
+        <option value="NIT">NIT</option>
+      </select>
+      <input type="text" [(ngModel)]="empCedula" name="empCedula" placeholder="Número de Documento" class="form-control" />
+      <input type="email" [(ngModel)]="empEmail" name="empEmail" placeholder="Correo" class="form-control" />
+      <input type="text" [(ngModel)]="empPhone" name="empPhone" placeholder="Teléfono" class="form-control" />
+      <select [(ngModel)]="empSede" name="empSede" class="form-control form-select">
+        <option value="">Seleccione Sede</option>
+        <option *ngFor="let sede of sedes" [value]="sede.name">{{ sede.name }} ({{ sede.city }})</option>
+      </select>
+      <button class="btn btn-primary" (click)="createEmployee()">+ Crear Empleado</button>
+    </div>
+
+    <div *ngIf="showEditForm && editingEmployee" class="edit-form">
+      <h3>Editar Empleado: {{ editingEmployee.username }}</h3>
+      <div class="employee-form">
+        <input type="text" [(ngModel)]="editingEmployee.full_name" placeholder="Nombre Completo" class="form-control" />
+        <select [(ngModel)]="editingEmployee.document_type" class="form-control form-select">
+          <option value="CC">Cédula de Ciudadanía</option>
+          <option value="CE">Cédula de Extranjería</option>
+          <option value="PPT">PPT</option>
+          <option value="PA">Pasaporte</option>
+          <option value="NIT">NIT</option>
+        </select>
+        <input type="text" [(ngModel)]="editingEmployee.cedula" placeholder="Número de Documento" class="form-control" />
+        <input type="email" [(ngModel)]="editingEmployee.email" placeholder="Correo" class="form-control" />
+        <input type="text" [(ngModel)]="editingEmployee.phone" placeholder="Teléfono" class="form-control" />
+        <select [(ngModel)]="editingEmployee.sede" class="form-control form-select">
+          <option value="">Seleccione Sede</option>
+          <option *ngFor="let sede of sedes" [value]="sede.name">{{ sede.name }} ({{ sede.city }})</option>
+        </select>
+        <input type="password" [(ngModel)]="editingEmployee.new_password" placeholder="Nueva Contraseña (opcional)" class="form-control" />
+        <button class="btn btn-success btn-sm" (click)="saveEdit()">Guardar</button>
+        <button class="btn btn-secondary btn-sm" (click)="cancelEdit()">Cancelar</button>
+      </div>
+    </div>
+
+    <table class="employee-table">
+      <thead>
+        <tr>
+          <th>Usuario</th>
+          <th>Nombre</th>
+          <th>Documento</th>
+          <th>Correo</th>
+          <th>Cargo</th>
+          <th>Entidad</th>
+          <th>Sede</th>
+          <th>Estado</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let emp of employees">
+          <td><strong>{{ emp.username }}</strong></td>
+          <td>{{ emp.full_name }}</td>
+          <td>{{ emp.document_type }} {{ emp.cedula }}</td>
+          <td>{{ emp.email }}</td>
+          <td>{{ emp.cargo }}</td>
+          <td>{{ emp.entidad }}</td>
+          <td>{{ emp.sede }}</td>
+          <td>
+            <span class="status-badge" [ngClass]="emp.is_active ? 'active' : 'inactive'">
+              {{ emp.is_active ? 'Activo' : 'Inactivo' }}
+            </span>
+          </td>
+          <td>
+            <button class="btn btn-warning btn-sm" (click)="editEmployee(emp)">Editar</button>
+            <button class="btn btn-danger btn-sm" (click)="deleteEmployee(emp.username)">Desactivar</button>
+          </td>
+        </tr>
+        <tr *ngIf="employees.length === 0">
+          <td colspan="9" class="text-center text-muted" style="padding: 3rem;">
+            <div style="font-size: 2rem; margin-bottom: 1rem; color: var(--gray-light);">-</div>
+            No hay empleados registrados
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="sedes-section">
+    <h2>Gestión de Sedes</h2>
+    <div class="sedes-form">
+      <input type="text" [(ngModel)]="newSedeName" name="newSedeName" placeholder="Nombre de la sede" class="form-control" />
+      <input type="text" [(ngModel)]="newSedeCity" name="newSedeCity" placeholder="Ciudad" class="form-control" />
+      <input type="text" [(ngModel)]="newSedeAddress" name="newSedeAddress" placeholder="Dirección" class="form-control" />
+      <button class="btn btn-primary" (click)="createSede()">+ Crear Sede</button>
+    </div>
+    <table class="employee-table">
+      <thead>
+        <tr>
+          <th>Nombre</th>
+          <th>Ciudad</th>
+          <th>Dirección</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let sede of sedes">
+          <td><strong>{{ sede.name }}</strong></td>
+          <td>{{ sede.city }}</td>
+          <td>{{ sede.address }}</td>
+          <td>
+            <button class="btn btn-warning btn-sm" (click)="editSede(sede)">Editar</button>
+            <button class="btn btn-danger btn-sm" (click)="deleteSede(sede.id)">Eliminar</button>
+          </td>
+        </tr>
+        <tr *ngIf="sedes.length === 0">
+          <td colspan="4" class="text-center text-muted" style="padding: 3rem;">No hay sedes registradas</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="reports-section">
+    <h2>Reportes y Exportación</h2>
+    <div>
+      <button class="btn-export csv" (click)="exportCSV()">Exportar CSV</button>
+      <button class="btn-export excel" (click)="exportExcel()">Exportar Excel</button>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,89 @@
+<div class="register-container">
+  <div class="login-card">
+    <div class="text-center" style="margin-bottom: 2rem;">
+      <img src="logo-turnify.png" alt="Turnify Pro" class="logo-img" />
+      <h2>Crear Cuenta</h2>
+      <p class="subtitle text-muted">Regístrate como cliente en Turnify Pro</p>
+    </div>
+    <form (ngSubmit)="onSubmit()">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Nombre Completo</label>
+          <input type="text" [(ngModel)]="full_name" name="full_name" class="form-control" placeholder="Nombre completo" required />
+        </div>
+        <div class="form-group">
+          <label>Tipo de Documento</label>
+          <select [(ngModel)]="document_type" name="document_type" class="form-control form-select">
+            <option value="CC">Cédula de Ciudadanía</option>
+            <option value="CE">Cédula de Extranjería</option>
+            <option value="PA">Pasaporte</option>
+            <option value="NIT">NIT</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Número de Documento</label>
+          <input type="text" [(ngModel)]="cedula" name="cedula" class="form-control" placeholder="Mínimo 10 dígitos" required />
+        </div>
+        <div class="form-group">
+          <label>Teléfono</label>
+          <input type="tel" [(ngModel)]="phone" name="phone" class="form-control" placeholder="Mínimo 10 dígitos" required />
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Correo Electrónico</label>
+        <input type="email" [(ngModel)]="email" name="email" class="form-control" placeholder="correo@ejemplo.com" required />
+      </div>
+
+      <div class="form-group">
+        <label>Nombre de Usuario</label>
+        <input type="text" [(ngModel)]="username" name="username" class="form-control" placeholder="Mínimo 3 caracteres" required autocomplete="username" />
+      </div>
+
+      <div class="form-group">
+        <label>Contraseña</label>
+        <input
+          type="password"
+          [(ngModel)]="password"
+          name="password"
+          class="form-control"
+          placeholder="Máximo 8 caracteres, incluye símbolo"
+          required
+          minlength="6"
+          maxlength="8"
+          autocomplete="new-password"
+          aria-describedby="password-hint"
+        />
+        <div id="password-hint" class="password-hint">
+          6-8 caracteres, mínimo 1 letra, 1 número y 1 símbolo (ej: ! @ #)
+        </div>
+      </div>
+
+
+      <div class="form-group">
+        <label>Confirmar Contraseña</label>
+        <input type="password" [(ngModel)]="confirm_password" name="confirm_password" class="form-control" placeholder="Repite tu contraseña" required autocomplete="new-password" />
+      </div>
+
+      <div class="form-check">
+        <input type="checkbox" [(ngModel)]="accept_terms" name="accept_terms" id="accept_terms" class="form-check-input" />
+        <label for="accept_terms" class="form-check-label">Acepto términos y condiciones</label>
+      </div>
+
+      <div id="error-container" *ngIf="error" class="alert alert-error">
+        {{ error }}
+      </div>
+
+      <button type="submit" class="btn btn-primary btn-lg" [disabled]="loading">
+        {{ loading ? 'Registrando...' : 'Crear Cuenta' }}
+      </button>
+    </form>
+
+    <div class="login-links">
+      ¿Ya tienes cuenta? <a href="/login">Inicia Sesión aquí</a>
+    </div>
+  </div>
+</div>

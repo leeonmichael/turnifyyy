@@ -1,0 +1,169 @@
+<div class="home-container fade-in-up" *ngIf="currentUser?.role === 'client' || !currentUser">
+  <div class="welcome-section" *ngIf="currentUser">
+    <div class="welcome-icon"></div>
+    <h1 class="welcome-title">Turnify Pro</h1>
+    <p class="welcome-subtitle">Tu sistema de turnos inteligente y profesional</p>
+    <p class="welcome-user">Bienvenido {{ currentUser.full_name || currentUser.username }}</p>
+  </div>
+
+  <div id="documentsSection" *ngIf="documents.length > 0">
+    <div class="info-card">
+      <h2>Documentos Adjuntos</h2>
+      <div style="margin-top: 1rem;">
+        <div class="doc-item doc-uploaded" *ngFor="let doc of documents">{{ doc }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="getTurnSection" *ngIf="!userTurn">
+    <div style="margin-bottom: 1.5rem;">
+      <label class="form-label">Tipo de atención:</label>
+      <select [(ngModel)]="serviceType" class="form-control form-select" style="max-width: 320px; margin: 0.5rem auto 0;">
+        <option value="general">General (A)</option>
+        <option value="preferential">Preferencial (B)</option>
+        <option value="emergency">Emergencia (E)</option>
+        <option value="vip">VIP</option>
+      </select>
+    </div>
+    <div style="margin-bottom: 1.5rem;">
+      <label class="form-label">Modalidad:</label>
+      <select [(ngModel)]="turnMode" class="form-control form-select" style="max-width: 320px; margin: 0.5rem auto 0;">
+        <option value="presencial">Presencial</option>
+        <option value="virtual">Virtual</option>
+      </select>
+    </div>
+    <div style="margin-bottom: 1.5rem;" *ngIf="turnMode === 'presencial'">
+      <label class="form-label">Sede:</label>
+      <select [(ngModel)]="selectedSede" class="form-control form-select" style="max-width: 320px; margin: 0.5rem auto 0;">
+        <option *ngFor="let sede of sedeOptions" [value]="sede">{{ sede }}</option>
+      </select>
+    </div>
+    <button class="get-turn-btn" (click)="getTurn()">Pedir mi Turno</button>
+    <p style="text-align: center; color: #64748b; margin-top: 1rem; font-size: 0.9375rem;">Haz clic para obtener tu número de turno</p>
+  </div>
+
+  <div id="turnDisplay" *ngIf="userTurn" class="turn-display">
+    <div style="color: white; font-size: 1.1rem; margin-bottom: 0.5rem;">Tu turno asignado</div>
+    <div class="turn-number-big" id="turnNumDisplay">{{ userTurn }}</div>
+    <button class="btn btn-danger btn-lg" (click)="cancelTurn()" style="margin-top: 1rem;">Cancelar Turno</button>
+  </div>
+
+  <div id="createNewTurn" *ngIf="showCreateNew && !userTurn" class="turn-display">
+    <h2>Crear nuevo turno</h2>
+    <div style="margin-bottom: 1rem;">
+      <label class="form-label">Modalidad:</label>
+      <select [(ngModel)]="turnMode" class="form-control form-select" style="max-width: 320px; margin: 0.5rem auto 0;">
+        <option value="presencial">Presencial</option>
+        <option value="virtual">Virtual</option>
+      </select>
+    </div>
+    <div style="margin-bottom: 1rem;" *ngIf="turnMode === 'presencial'">
+      <label class="form-label">Sede:</label>
+      <select [(ngModel)]="selectedSede" class="form-control form-select" style="max-width: 320px; margin: 0.5rem auto 0;">
+        <option value="MOSQUERA">MOSQUERA</option>
+        <option value="MADRID">MADRID</option>
+        <option value="FACATATIVA">FACATATIVA</option>
+        <option value="FUNZA">FUNZA</option>
+      </select>
+    </div>
+    <div style="margin-bottom: 1rem;">
+      <label class="form-label">Tipo de atención:</label>
+      <select [(ngModel)]="serviceType" class="form-control form-select" style="max-width: 320px; margin: 0.5rem auto 0;">
+        <option value="general">General</option>
+        <option value="preferential">Preferencial</option>
+        <option value="emergency">Emergencia</option>
+        <option value="vip">VIP</option>
+      </select>
+    </div>
+    <button class="get-turn-btn" (click)="getTurn()">Pedir Turno</button>
+  </div>
+
+  <div id="infoSections" *ngIf="userTurn">
+    <div id="positionCard" class="position-display">
+      <div class="position-label">Tu Posición en la Cola</div>
+      <div class="position-number" id="positionNum">{{ positionNum || '---' }}</div>
+      <div id="positionDetail" style="font-size: 1rem; margin-top: 0.5rem;">{{ positionDetail }}</div>
+    </div>
+
+    <div id="alertContainer" *ngIf="!completed">
+      <div class="alert-box alert-warning" *ngIf="alertShown">
+        <div class="alert-icon"></div>
+        <div class="alert-text">¡Ya casi es tu turno!</div>
+        <div class="alert-subtext">Faltan solo 2 personas</div>
+      </div>
+    </div>
+
+    <div class="info-card">
+      <h2>Estado de tu Turno</h2>
+      <p id="statusText" style="font-size: 1.1rem; color: var(--dark); margin: 1rem 0;">{{ statusText }}</p>
+      <p style="font-size: 0.9rem; color: var(--gray); margin: 0;">Los datos se actualizan automáticamente cada segundo</p>
+    </div>
+
+    <div id="completedAlert" *ngIf="completed" class="completed-badge">TU TURNO HA SIDO ATENDIDO</div>
+  </div>
+</div>
+
+<div id="turnModal" class="modal-overlay" [class.show]="showTurnModal" *ngIf="showTurnModal">
+  <div class="modal-dialog">
+    <div class="modal-icon"></div>
+    <h2 class="modal-title">Turno Asignado</h2>
+    <p style="color: var(--gray); margin: 1rem 0;">Tu numero de turno es:</p>
+    <div class="modal-turn" id="modalTurnNum">{{ userTurn }}</div>
+    <p style="color: var(--gray); margin: 1.5rem 0; line-height: 1.6;">Espera comodamente. Te notificaremos cuando sea tu turno.<br><strong>No olvides tu numero.</strong></p>
+    <button class="btn btn-primary btn-lg" (click)="closeModal()" style="margin-top: 1rem;">Entendido</button>
+  </div>
+</div>
+
+<!-- Admin / Empleado -->
+<div class="home-container fade-in-up" *ngIf="currentUser?.role === 'admin' || currentUser?.role === 'employee'">
+  <div class="welcome-section">
+    <div class="welcome-icon"></div>
+    <h1 class="welcome-title">Panel de Turnos</h1>
+    <p class="welcome-subtitle">Gestion de turnos - {{ currentUser?.role === 'admin' ? 'Administrador' : 'Empleado' }}</p>
+    <p class="welcome-user">Bienvenido {{ currentUser?.full_name || currentUser?.username }}</p>
+  </div>
+
+  <div class="stats-section">
+    <div class="stat-card">
+      <div class="stat-number">{{ waitingCount }}</div>
+      <div class="stat-label">En Espera</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number">{{ callingCount }}</div>
+      <div class="stat-label">Llamando</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number">{{ finishedCount }}</div>
+      <div class="stat-label">Atendidos</div>
+    </div>
+  </div>
+
+  <div class="filter-section">
+    <label class="filter-label">Filtrar por Sede:</label>
+    <select [(ngModel)]="filterSede" class="form-control form-select">
+      <option value="">Todas las sedes</option>
+      <option *ngFor="let sede of sedeOptions" [value]="sede">{{ sede }}</option>
+    </select>
+  </div>
+
+  <div class="waiting-queue">
+    <div class="queue-header">
+      <h2 class="queue-title">Turnos en el Sistema</h2>
+    </div>
+    <div id="waitingQueue">
+      <div class="no-turns" *ngIf="turns.length === 0">
+        <p>No hay turnos registrados</p>
+      </div>
+      <div class="turn-item" *ngFor="let turn of turns">
+        <div class="turn-info">
+          <span class="turn-number">{{ turn.number }}</span>
+          <span class="turn-time">Creado: {{ turn.created_at }}</span>
+          <span class="turn-sede" *ngIf="turn.sede">{{ turn.sede }}</span>
+          <span class="turn-sede" *ngIf="turn.called_by" style="background: rgba(16, 185, 129, 0.1); color: #059669;">
+            Atendido por: {{ turn.called_by }}
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

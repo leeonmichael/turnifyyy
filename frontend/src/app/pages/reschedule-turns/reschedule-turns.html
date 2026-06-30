@@ -1,0 +1,44 @@
+<div class="reschedule-container fade-in-up">
+  <div class="reschedule-card">
+    <h1>Reagendar Turnos</h1>
+
+    <div *ngIf="loading" class="loading-state">
+      Cargando turnos...
+    </div>
+
+    <table *ngIf="!loading && turns.length > 0" class="turns-table">
+      <thead>
+        <tr>
+          <th>Numero</th>
+          <th>Tipo</th>
+          <th>Sede</th>
+          <th>Estado</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let turn of turns">
+          <td class="turn-number">{{ turn.number }}</td>
+          <td>{{ turn.service_type }}</td>
+          <td>{{ turn.sede }}</td>
+          <td>
+            <span class="status-badge"
+                  [class.status-waiting]="turn.status === 'waiting'"
+                  [class.status-calling]="turn.status === 'called'"
+                  [class.status-completed]="turn.status === 'finished'"
+                  [class.status-cancelled]="turn.status === 'cancelled'">
+              {{ turn.status === 'waiting' ? 'En espera' : turn.status === 'called' ? 'Llamando' : turn.status === 'finished' ? 'Atendido' : turn.status === 'cancelled' ? 'Cancelado' : turn.status }}
+            </span>
+          </td>
+          <td>
+            <button *ngIf="turn.status === 'waiting' || turn.status === 'called'" (click)="rescheduleTurn(turn.number)" class="btn-reschedule btn btn-warning btn-sm">Reagendar</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div *ngIf="!loading && turns.length === 0" class="empty-state">
+      No hay turnos para reagendar
+    </div>
+  </div>
+</div>

@@ -1,0 +1,111 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.reschedule-container {
+  max-width: 1200px;
+  margin: 2rem auto;
+  padding: 0 1.5rem;
+  flex: 1;
+}
+
+.reschedule-card {
+  background: white;
+  border-radius: 16px;
+  padding: 2.5rem;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+  border: 1px solid #e2e8f0;
+}
+
+.reschedule-card h1 {
+  color: #1e293b;
+  text-align: center;
+  margin-bottom: 2rem;
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.loading-state,
+.empty-state {
+  text-align: center;
+  padding: 3rem 2rem;
+  color: #64748b;
+}
+
+.turns-table {
+  width: 100%;
+  border-collapse: collapse;
+  color: #1e293b;
+  font-family: var(--font-primary, 'Inter', sans-serif);
+}
+
+.turns-table th,
+.turns-table td {
+  padding: 1.125rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.turns-table th {
+  background: #4a90f7;
+  color: white;
+  font-weight: 600;
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.turns-table td {
+  font-size: 0.9375rem;
+}
+
+.turn-number {
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: #4a90f7;
+  font-family: 'Inter', monospace;
+}
+
+.status-badge {
+  padding: 0.4rem 1rem;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.status-waiting {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.status-calling {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.status-completed {
+  background: #d1fae5;
+  color: #059669;
+}
+
+.btn-reschedule {
+  background: #4a90f7;
+  color: white;
+  border: none;
+  padding: 0.5rem 1.25rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 0.875rem;
+  transition: all 0.25s ease;
+}
+
+.btn-reschedule:hover {
+  background: #2563eb;
+  transform: translateY(-1px);
+}

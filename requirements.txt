@@ -1,0 +1,14 @@
+
+django
+djangorestframework
+firebase-admin
+django-cors-headers
+python-dotenv
+requests
+google-genai
+channels
+daphne
+openpyxl
+pandas
+whitenoise
+pyjwt>=2.8.0

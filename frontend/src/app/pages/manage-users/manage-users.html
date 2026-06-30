@@ -1,0 +1,40 @@
+<div class="manage-users-container fade-in-up">
+  <div class="users-card">
+    <h1>Gestion de Usuarios</h1>
+
+    <div *ngIf="loading" class="loading-state">
+      Cargando usuarios...
+    </div>
+
+    <table *ngIf="!loading && users.length > 0" class="users-table">
+      <thead>
+        <tr>
+          <th>Usuario</th>
+          <th>Nombre</th>
+          <th>Rol</th>
+          <th>Documento</th>
+          <th>Entidad</th>
+          <th>Sede</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let user of users">
+          <td>{{ user.username }}</td>
+          <td>{{ user.full_name || '-' }}</td>
+          <td>{{ user.role }}</td>
+          <td>{{ user.document_type }}: {{ user.cedula || '-' }}</td>
+          <td>{{ user.entidad || '-' }}</td>
+          <td>{{ user.sede || '-' }}</td>
+          <td>
+            <button (click)="deleteUser(user.username)" class="btn-delete btn btn-danger btn-sm">Eliminar</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div *ngIf="!loading && users.length === 0" class="empty-state">
+      No hay usuarios registrados
+    </div>
+  </div>
+</div>

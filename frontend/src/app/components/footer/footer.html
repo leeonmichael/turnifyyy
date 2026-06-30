@@ -1,0 +1,27 @@
+<footer class="footer">
+  <div class="footer-container">
+    <div class="footer-content">
+      <div class="footer-section">
+        <h3>Turnify Pro</h3>
+        <p>Sistema Inteligente de Gestión de Turnos</p>
+      </div>
+      
+      <div class="footer-section">
+        <h4>Enlaces</h4>
+        <a routerLink="/home">Inicio</a>
+        <a routerLink="/login">Login</a>
+        <a routerLink="/register">Registro</a>
+      </div>
+      
+      <div class="footer-section" *ngIf="!isAdmin()">
+        <h4>Contacto</h4>
+        <p>info@turnifypro.com</p>
+        <p>+57 (1) 234-5678</p>
+      </div>
+    </div>
+    
+    <div class="footer-bottom">
+      <p>© {{ currentYear }} Turnify Pro. Todos los derechos reservados.</p>
+    </div>
+  </div>
+</footer>

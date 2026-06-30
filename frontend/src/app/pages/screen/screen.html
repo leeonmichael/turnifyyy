@@ -1,0 +1,33 @@
+<div class="screen-container">
+  <div class="header-bar">
+    <div class="header-left">Turnify Pro - Pantalla Digital</div>
+    <div class="header-right">
+      <div class="stats-display">En espera: <span id="waitingCount">{{ waitingCount }}</span></div>
+      <div class="clock-display"><span id="timer">{{ timer }}</span></div>
+    </div>
+  </div>
+
+  <div class="main-content">
+    <div class="calling-section">
+      <div class="calling-label">Atendiendo</div>
+      <p class="calling-number" id="currentNumber">{{ currentTurn?.number || '---' }}</p>
+      <p style="color: white; font-size: 1.2rem; margin-top: 1rem;" *ngIf="currentTurn?.called_by">
+        Atendido por: {{ currentTurn.called_by }}
+      </p>
+      <p style="color: white; font-size: 1rem; margin-top: 0.5rem;" *ngIf="currentTurn?.sede">
+        Sede: {{ currentTurn.sede }}
+      </p>
+    </div>
+
+    <div class="next-section">
+      <div class="next-label">Próximos a ser llamados</div>
+      <div class="next-turns-display" id="nextTurnsDisplay">
+        <div class="empty-state" *ngIf="nextTurns.length === 0">Sin turnos esperando</div>
+        <div class="next-turn-number" *ngFor="let turn of nextTurns">
+          <div>{{ turn.number }}</div>
+          <div style="font-size: 0.8rem; color: #64748b; margin-top: 0.5rem;" *ngIf="turn.sede">{{ turn.sede }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

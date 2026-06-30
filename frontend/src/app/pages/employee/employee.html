@@ -1,0 +1,135 @@
+<div class="employee-dashboard">
+  <div class="welcome-banner" *ngIf="currentUser">
+    <div class="welcome-content">
+      <h1 class="welcome-title">Bienvenido, {{ getEmployeeName() }}</h1>
+      <p class="welcome-sede">Sede: {{ getEmployeeSede() }}</p>
+    </div>
+  </div>
+
+  <div class="current-turn-section" *ngIf="currentTurn">
+    <div class="turn-header">TURNO ACTUAL</div>
+    <div id="currentTurn" class="turno-actual-panel">{{ currentTurn.number }}</div>
+    <div id="currentStatus" class="estado-actual">
+      <span style="color: white; font-weight: bold;">LLAMANDO: {{ currentTurn.number }}</span>
+    </div>
+    <button class="complete-turn-btn" (click)="showActionModal = true">
+      Acciones del Turno
+    </button>
+  </div>
+
+  <div class="current-turn-section" *ngIf="!currentTurn">
+    <div class="turn-header">SIN TURNO EN CURSO</div>
+    <div class="turno-actual-panel" style="background: #94a3b8;">---</div>
+  </div>
+
+  <div class="action-modal" *ngIf="showActionModal && currentTurn">
+    <div class="action-modal-content">
+      <h3>Opciones del Turno {{ currentTurn.number }}</h3>
+      <p class="action-subtitle">Selecciona una acción:</p>
+      <div class="action-buttons">
+        <button class="action-btn complete-btn" (click)="finishCurrent()">
+          <span class="action-icon">&#10003;</span>
+          <span>Completar</span>
+        </button>
+        <button class="action-btn reschedule-btn" (click)="rescheduleCurrent()">
+          <span class="action-icon">&#128197;</span>
+          <span>Reagendar</span>
+        </button>
+        <button class="action-btn cancel-btn" (click)="cancelCurrent()">
+          <span class="action-icon">&#10005;</span>
+          <span>Cancelar</span>
+        </button>
+      </div>
+      <button class="close-modal-btn" (click)="showActionModal = false">Cerrar</button>
+    </div>
+  </div>
+
+  <div class="control-panel">
+    <h2>Panel de Control</h2>
+    <div class="control-buttons">
+      <button id="callBtn" class="control-btn call-btn" (click)="callNext()">
+        <span class="btn-icon">&#9835;</span>
+        <span>LLAMAR SIGUIENTE</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="stats-section">
+    <div class="stat-card">
+      <div class="stat-number">{{ stats.waiting }}</div>
+      <div class="stat-label">Turnos Esperando</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number">{{ stats.totalToday }}</div>
+      <div class="stat-label">Total Hoy</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number">{{ stats.processed }}</div>
+      <div class="stat-label">Procesados</div>
+    </div>
+  </div>
+
+  <div class="filter-section">
+    <label class="filter-label">Filtrar por Sede:</label>
+    <select [(ngModel)]="filterSede" (change)="onSedeFilterChange()" class="form-control form-select">
+      <option value="">Todas las sedes</option>
+      <option *ngFor="let sede of sedes">{{ sede }}</option>
+    </select>
+  </div>
+
+  <div class="waiting-queue">
+    <div class="queue-header">
+      <h2 class="queue-title">Cola de Espera</h2>
+      <span class="queue-count">{{ waitingTurns.length }} turnos</span>
+    </div>
+    <div id="waitingQueue">
+      <div class="no-turns" *ngIf="waitingTurns.length === 0">
+        <p>No hay turnos en espera</p>
+      </div>
+      <div class="turn-item" *ngFor="let turn of waitingTurns">
+        <div class="turn-info">
+          <span class="turn-number">{{ turn.number }}</span>
+          <span class="turn-time">Creado: {{ turn.created_at }}</span>
+          <span class="turn-sede" *ngIf="turn.sede">{{ turn.sede }}</span>
+        </div>
+        <button class="call-turn-btn" (click)="callSpecific(turn.number)">Llamar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="all-turns-section">
+    <h2 class="queue-title">Todos los Turnos Recientes</h2>
+    <div class="turns-table-container">
+      <table class="turns-table">
+        <thead>
+          <tr>
+            <th>Numero</th>
+            <th>Tipo</th>
+            <th>Sede</th>
+            <th>Estado</th>
+            <th>Hora</th>
+            <th>Atendido por</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let turn of turns.slice(0, 20)">
+            <td class="turn-number">{{ turn.number }}</td>
+            <td>{{ turn.service_type }}</td>
+            <td>{{ turn.sede }}</td>
+            <td>
+              <span class="status-badge"
+                    [class.status-waiting]="turn.status === 'waiting'"
+                    [class.status-calling]="turn.status === 'called'"
+                    [class.status-completed]="turn.status === 'finished'"
+                    [class.status-cancelled]="turn.status === 'cancelled'">
+                {{ turn.status === 'waiting' ? 'En espera' : turn.status === 'called' ? 'Llamando' : turn.status === 'finished' ? 'Atendido' : turn.status === 'cancelled' ? 'Cancelado' : turn.status }}
+              </span>
+            </td>
+            <td>{{ turn.created_at }}</td>
+            <td>{{ turn.called_by || '-' }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>

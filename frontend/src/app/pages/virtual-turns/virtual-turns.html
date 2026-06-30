@@ -1,0 +1,55 @@
+<div class="virtual-turns-container fade-in-up">
+  <div class="virtual-card">
+    <h1>Turnos Virtuales</h1>
+    <p class="subtitle">Atiende turnos virtuales desde esta sección</p>
+
+    <div class="filters-section">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Filtrar por Sede:</label>
+          <select [(ngModel)]="filterSede" class="form-control form-select" (change)="applyFilters()">
+            <option value="">Todas las sedes</option>
+            <option *ngFor="let sede of sedes">{{ sede }}</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="turns-list" *ngIf="filteredTurns.length > 0">
+      <table class="turns-table">
+        <thead>
+          <tr>
+            <th>Número</th>
+            <th>Sede</th>
+            <th>Estado</th>
+            <th>Fecha</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let turn of filteredTurns">
+            <td class="turn-number">{{ turn.number }}</td>
+            <td>{{ turn.sede }}</td>
+            <td>
+              <span class="status-badge"
+                    [class.status-waiting]="turn.status === 'waiting'"
+                    [class.status-calling]="turn.status === 'called'"
+                    [class.status-completed]="turn.status === 'finished'"
+                    [class.status-cancelled]="turn.status === 'cancelled'">
+                {{ turn.status === 'waiting' ? 'En espera' : turn.status === 'called' ? 'Llamando' : turn.status === 'finished' ? 'Atendido' : turn.status === 'cancelled' ? 'Cancelado' : turn.status }}
+              </span>
+            </td>
+            <td>{{ turn.created_at }}</td>
+            <td>
+              <button *ngIf="turn.status === 'waiting'" (click)="attendVirtual(turn.number)" class="btn-attend btn btn-primary btn-sm">Atender</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="empty-state" *ngIf="filteredTurns.length === 0">
+      <p>No hay turnos virtuales registrados</p>
+    </div>
+  </div>
+</div>

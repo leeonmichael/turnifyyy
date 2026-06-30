@@ -1,0 +1,47 @@
+<div class="my-turns-container fade-in-up">
+  <div class="turns-card">
+    <h1>Mis Turnos</h1>
+
+    <div *ngIf="loading" class="loading-state">
+      Cargando turnos...
+    </div>
+
+    <div *ngIf="!loading && turns.length === 0" class="empty-state">
+      <p>No tienes turnos registrados</p>
+      <a routerLink="/home" class="btn btn-primary">Pedir un turno</a>
+    </div>
+
+    <table *ngIf="!loading && turns.length > 0" class="turns-table">
+      <thead>
+        <tr>
+          <th>Número</th>
+          <th>Tipo</th>
+          <th>Sede</th>
+          <th>Estado</th>
+          <th>Fecha</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let turn of turns">
+          <td class="turn-number">{{ turn.number }}</td>
+          <td>{{ turn.service_type }}</td>
+          <td>{{ turn.sede }}</td>
+          <td>
+            <span class="status-badge"
+                  [class.status-waiting]="turn.status === 'waiting'"
+                  [class.status-calling]="turn.status === 'called'"
+                  [class.status-completed]="turn.status === 'finished'"
+                  [class.status-cancelled]="turn.status === 'cancelled'">
+              {{ turn.status === 'waiting' ? 'En espera' : turn.status === 'called' ? 'Llamando' : turn.status === 'finished' ? 'Atendido' : turn.status === 'cancelled' ? 'Cancelado' : turn.status }}
+            </span>
+          </td>
+          <td>{{ turn.created_at }}</td>
+          <td>
+            <button *ngIf="turn.status === 'waiting'" (click)="cancelTurn(turn.number)" class="btn-cancel btn btn-danger btn-sm">Cancelar</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
