@@ -1,6 +1,42 @@
-# Frontend
+# 🚀 Turnify - Sistema de Gestión de Turnos
 
-This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 22.0.4.
+## Integración Frontend (Angular) - Backend (Django)
+
+### Configuración actual:
+
+**Proxy configurado** (`frontend/proxy.conf.json`):
+- `/api` → `http://localhost:8000/api`
+- `/ws/turns` → WebSocket `ws://localhost:8000/ws/turns`
+
+### Ejecución en desarrollo:
+
+1. **Iniciar Django** (en raíz del proyecto):
+```bash
+python manage.py runserver
+```
+
+2. **Iniciar Angular con proxy** (en carpeta frontend):
+```bash
+cd frontend
+npm run start:proxy
+```
+
+3. **Acceder**: `http://localhost:4200`
+
+### Ejecución en producción:
+
+1. **Construir Angular**:
+```bash
+cd frontend
+npm run build
+```
+
+2. **Servir con Django** (el build se sirve desde Django):
+```bash
+python manage.py runserver
+```
+
+Los archivos estáticos del frontend se servirán desde `frontend/dist/frontend/browser/` a través de Django.
 
 ## Development server
 

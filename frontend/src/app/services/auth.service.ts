@@ -53,7 +53,7 @@ export class AuthService {
   }
 
   updateProfile(data: any): Observable<any> {
-    return this.http.put(`${this.apiUrl}/profile/`, data, { headers: this.getHeaders() });
+    return this.http.put(`${this.apiUrl}/update-profile/`, data, { headers: this.getHeaders() });
   }
 
   setSession(token: string, user: any): void {

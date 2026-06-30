@@ -42,7 +42,7 @@ export class Profile implements OnInit {
     });
   }
 
-  updateProfile(): void {
+updateProfile(): void {
     this.loading = true;
     this.message = '';
 

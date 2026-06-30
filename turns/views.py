@@ -254,10 +254,71 @@ def verify_session(request):
     payload = decode_access_token(token)
     if not payload:
         return Response({'authenticated': False, 'role': None})
+    
+    user_data = None
+    username = payload.get('username')
+    if username:
+        register = Register.objects.filter(username=username).first()
+        if register:
+            user_data = {
+                'username': register.username,
+                'full_name': register.full_name,
+                'email': register.email,
+                'phone': register.phone,
+                'cedula': register.cedula,
+                'role': register.role
+            }
+    
     return Response({
         'authenticated': True,
         'role': payload.get('role'),
-        'username': payload.get('username')
+        'username': payload.get('username'),
+        'user': user_data
+    })
+
+
+@csrf_exempt
+@api_view(['PUT'])
+def update_profile(request):
+    token = get_token_from_request(request)
+    payload = decode_access_token(token) if token else None
+    username = payload.get('username', '') if payload else ''
+    
+    if not username:
+        return Response({'success': False, 'message': 'No autenticado'}, status=401)
+    
+    user = Register.objects.filter(username=username).first()
+    if not user:
+        return Response({'success': False, 'message': 'Usuario no encontrado'}, status=404)
+    
+    user.full_name = request.data.get('full_name', user.full_name).strip()
+    user.email = request.data.get('email', user.email).strip()
+    user.phone = request.data.get('phone', user.phone).strip()
+    
+    if 'password' in request.data and request.data['password']:
+        password = request.data['password'].strip()
+        if len(password) < 4:
+            return Response({'success': False, 'field': 'password', 'message': 'La contraseña debe tener mínimo 4 caracteres'}, status=400)
+        user.password = make_password(password)
+    
+    if user.email and not validate_email(user.email):
+        return Response({'success': False, 'field': 'email', 'message': 'Ingrese un correo electrónico válido'}, status=400)
+    if user.email and Register.objects.filter(email=user.email).exclude(username=username).exists():
+        return Response({'success': False, 'field': 'email', 'message': 'Este correo ya está registrado'}, status=409)
+    
+    user.save()
+    
+    return Response({
+        'success': True,
+        'message': 'Perfil actualizado correctamente',
+        'user': {
+            'username': user.username,
+            'full_name': user.full_name,
+            'email': user.email,
+            'phone': user.phone,
+            'cedula': user.cedula,
+            'role': user.role
+        }
     })
 
 
@@ -1114,28 +1175,3 @@ def delete_sede(request, sede_id):
             pass
 
     return Response({'success': True, 'message': f'Sede {sede.name} eliminada correctamente'})
-
-
-@csrf_exempt
-@api_view(['DELETE'])
-def cancel_turn(request, turn_number):
-    turn = Turn.objects.filter(number=turn_number).first()
-    if not turn or turn.status in ['finished', 'completed']:
-        return Response({'success': False, 'message': 'Turno no encontrado o no se puede cancelar'}, status=404)
-    
-    token = get_token_from_request(request)
-    payload = decode_access_token(token) if token else None
-    cancelled_by = payload.get('username', '') if payload else ''
-
-    if db:
-        try:
-            db.collection('turns').document(turn_number).update({
-                'status': 'cancelled',
-                'cancelled_by': cancelled_by,
-                'cancelled_at': timezone.now().isoformat()
-            })
-        except Exception:
-            pass
-    turn.delete()
-    broadcast_turn_update()
-    return Response({'success': True, 'message': 'Turno cancelado'})

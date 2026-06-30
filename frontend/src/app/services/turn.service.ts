@@ -84,7 +84,7 @@ export class TurnService {
   }
 
   updateEmployee(username: string, data: any): Observable<any> {
-    return this.http.post(`${this.apiUrl}/update-employee/${username}/`, data, { headers: this.getHeaders() });
+    return this.http.put(`${this.apiUrl}/update-employee/${username}/`, data, { headers: this.getHeaders() });
   }
 
   deactivateEmployee(username: string): Observable<any> {

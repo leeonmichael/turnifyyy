@@ -1,8 +1,8 @@
 <div class="home-container fade-in-up" *ngIf="currentUser?.role === 'client' || !currentUser">
   <div class="welcome-section" *ngIf="currentUser">
     <div class="welcome-icon"></div>
-    <h1 class="welcome-title">Turnify Pro</h1>
-    <p class="welcome-subtitle">Tu sistema de turnos inteligente y profesional</p>
+    <img src="LOGO.png" alt="Turnify Pro" class="home-logo-img" />
+    <img src="NOMBRE Y ESLOGAN.png" alt="Nombre y Eslogan" class="home-logo-eslogan" />
     <p class="welcome-user">Bienvenido {{ currentUser.full_name || currentUser.username }}</p>
   </div>
 

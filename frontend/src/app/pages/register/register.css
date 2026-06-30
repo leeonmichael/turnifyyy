@@ -3,7 +3,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #4a90f7 0%, #2563eb 100%);
+  background-image: url('/FONDO.png');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
   padding: 1rem;
   position: relative;
   overflow: hidden;
@@ -19,16 +22,10 @@ html, body {
   box-sizing: border-box;
 }
 
-.register-container::before {
-  content: '';
-  position: absolute;
-  top: -50%;
-  left: -50%;
-  width: 200%;
-  height: 200%;
-  background: radial-gradient(circle, rgba(255,255,255,0.08) 1px, transparent 1px);
-  background-size: 50px 50px;
-  opacity: 0.4;
+.logo-img {
+  max-height: 80px;
+  width: auto;
+  margin-bottom: 1rem;
 }
 
 .login-card {
