@@ -21,7 +21,11 @@ export class Navbar implements OnInit {
   }
 
   logout(): void {
-    this.auth.logout();
+    this.auth.clearSession();
+    this.auth.logout().subscribe({
+      next: () => {},
+      error: () => {}
+    });
     this.router.navigate(['/login']);
   }
 
@@ -35,5 +39,9 @@ export class Navbar implements OnInit {
 
   isAdmin(): boolean {
     return this.role === 'admin';
+  }
+
+  canManageUsers(): boolean {
+    return this.role === 'employee' || this.role === 'admin';
   }
 }

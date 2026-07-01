@@ -34,6 +34,34 @@
   font-weight: 500;
 }
 
+/* Sede badge */
+.sede-badge-section {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: #eff6ff;
+  border: 1.5px solid #bfdbfe;
+  border-radius: 12px;
+  padding: 0.875rem 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.sede-badge {
+  background: #2563eb;
+  color: white;
+  font-weight: 700;
+  font-size: 0.9375rem;
+  padding: 0.4rem 1rem;
+  border-radius: 20px;
+  letter-spacing: 0.01em;
+}
+
+.sede-info {
+  color: #3b82f6;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
 /* Profile Section */
 .profile-section {
   margin-bottom: 2.5rem;

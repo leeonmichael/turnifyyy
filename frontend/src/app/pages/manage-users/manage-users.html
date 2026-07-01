@@ -2,8 +2,10 @@
   <div class="users-card">
     <h1>Gestion de Usuarios</h1>
 
-    <div *ngIf="loading" class="loading-state">
-      Cargando usuarios...
+    <div *ngIf="loading" class="loading-state">Cargando usuarios...</div>
+    <div *ngIf="!loading && errorMessage" class="error-state" style="color:#e74c3c;padding:1rem;">
+      {{ errorMessage }}
+      <button (click)="loadUsers()" style="margin-left:1rem;" class="btn btn-sm btn-warning">Reintentar</button>
     </div>
 
     <table *ngIf="!loading && users.length > 0" class="users-table">
@@ -15,6 +17,7 @@
           <th>Documento</th>
           <th>Entidad</th>
           <th>Sede</th>
+          <th>Estado</th>
           <th>Acciones</th>
         </tr>
       </thead>
@@ -27,6 +30,18 @@
           <td>{{ user.entidad || '-' }}</td>
           <td>{{ user.sede || '-' }}</td>
           <td>
+            <span class="status-badge" [class.active]="user.is_active" [class.inactive]="!user.is_active">
+              {{ user.is_active ? 'Activo' : 'Inactivo' }}
+            </span>
+          </td>
+          <td>
+            <button
+              (click)="toggleUserActive(user.username, user.is_active)"
+              class="btn btn-sm"
+              [class.btn-warning]="user.is_active"
+              [class.btn-success]="!user.is_active">
+              {{ user.is_active ? 'Desactivar' : 'Activar' }}
+            </button>
             <button (click)="deleteUser(user.username)" class="btn-delete btn btn-danger btn-sm">Eliminar</button>
           </td>
         </tr>

@@ -16,6 +16,7 @@ export const roleGuard: CanActivateFn = (route: ActivatedRouteSnapshot, state: R
   const router = inject(Router);
   const allowedRoles: string[] = route.data['roles'] || [];
   const currentRole = auth.getCurrentRole();
+  console.log('Role guard check - allowed:', allowedRoles, 'current:', currentRole);
   if (!currentRole || !allowedRoles.includes(currentRole)) {
     return router.createUrlTree(['/login']);
   }

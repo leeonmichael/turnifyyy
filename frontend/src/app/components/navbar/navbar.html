@@ -1,8 +1,8 @@
 <nav class="navbar">
   <div class="navbar-container">
     <a routerLink="/home" class="navbar-brand" style="text-decoration: none;">
-      <img src="LOGO.png" alt="Logo" class="navbar-logo" />
-      <img src="NOMBRE Y ESLOGAN.png" alt="Nombre y Eslogan" class="navbar-title-img" />
+      <img src="/LOGO.png" alt="Logo" class="navbar-logo" />
+      <img src="/NOMBRE Y ESLOGAN.png" alt="Nombre y Eslogan" class="navbar-title-img" />
     </a>
 
     <div class="navbar-menu" *ngIf="isClient()">
@@ -23,6 +23,7 @@
     <div class="navbar-menu" *ngIf="isAdmin()">
       <a routerLink="/dashboard" class="navbar-link">Dashboard</a>
       <a routerLink="/home" class="navbar-link">Turnos</a>
+      <a routerLink="/manage-users" class="navbar-link">Usuarios</a>
       <a routerLink="/screen" class="navbar-link">Pantalla</a>
       <button (click)="logout()" class="navbar-logout-btn">Salir</button>
     </div>

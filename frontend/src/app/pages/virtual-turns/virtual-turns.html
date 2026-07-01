@@ -1,55 +1,123 @@
 <div class="virtual-turns-container fade-in-up">
-  <div class="virtual-card">
+
+  <!-- Panel de atención activa (chat) -->
+  <div class="chat-wrapper" *ngIf="activeVirtualTurn">
+    <div class="chat-panel">
+      <div class="chat-header">
+        <div class="chat-header-info">
+          <span class="chat-turn-badge">{{ activeVirtualTurn.number }}</span>
+          <div class="chat-header-text">
+            <h2>Atención Virtual en Curso</h2>
+            <p>Cliente: <strong>{{ activeVirtualTurn.created_by || 'Desconocido' }}</strong>
+               · Sede: {{ activeVirtualTurn.sede }}</p>
+          </div>
+        </div>
+        <button class="btn-close-chat" (click)="closeChat()" title="Volver a lista">✕</button>
+      </div>
+
+      <div class="chat-actions-bar">
+        <button class="chat-action-btn btn-finish" (click)="finishVirtual()" [disabled]="finishing">
+          ✓ Finalizar
+        </button>
+        <button class="chat-action-btn btn-reschedule" (click)="rescheduleVirtual()">
+          📅 Reagendar
+        </button>
+        <button class="chat-action-btn btn-cancel" (click)="cancelVirtual()">
+          ✗ No llegó
+        </button>
+      </div>
+
+      <div class="chat-messages" id="chatMessages">
+        <div *ngFor="let msg of chatMessages"
+             class="chat-message"
+             [class.system-message]="msg.isSystem"
+             [class.employee-message]="!msg.isSystem">
+          <div class="msg-header">
+            <span class="msg-sender">{{ msg.sender }}</span>
+            <span class="msg-time">{{ msg.time }}</span>
+          </div>
+          <div class="msg-body">{{ msg.text }}</div>
+        </div>
+        <div *ngIf="chatMessages.length === 0" class="chat-placeholder">
+          Notas de atención al cliente...
+        </div>
+      </div>
+
+      <div class="chat-input-area">
+        <input
+          [(ngModel)]="newMessage"
+          (keyup.enter)="sendMessage()"
+          placeholder="Escribe una nota de la atención..."
+          class="chat-input"
+        />
+        <button (click)="sendMessage()" class="btn-send">
+          Enviar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lista de turnos virtuales -->
+  <div class="virtual-card" *ngIf="!activeVirtualTurn">
     <h1>Turnos Virtuales</h1>
-    <p class="subtitle">Atiende turnos virtuales desde esta sección</p>
+    <p class="subtitle">Atiende turnos virtuales en tiempo real · actualización automática</p>
 
     <div class="filters-section">
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Filtrar por Sede:</label>
-          <select [(ngModel)]="filterSede" class="form-control form-select" (change)="applyFilters()">
-            <option value="">Todas las sedes</option>
-            <option *ngFor="let sede of sedes">{{ sede }}</option>
-          </select>
-        </div>
+      <div class="form-group">
+        <label class="form-label">Filtrar por Sede:</label>
+        <select [(ngModel)]="filterSede" class="form-control form-select" (change)="applyFilters()">
+          <option value="">Todas las sedes</option>
+          <option *ngFor="let sede of sedes">{{ sede }}</option>
+        </select>
       </div>
     </div>
 
-    <div class="turns-list" *ngIf="filteredTurns.length > 0">
+    <div *ngIf="loading" class="loading-state">Cargando turnos virtuales...</div>
+
+    <div class="turns-list" *ngIf="!loading && filteredTurns.length > 0">
       <table class="turns-table">
         <thead>
           <tr>
             <th>Número</th>
+            <th>Cliente</th>
             <th>Sede</th>
             <th>Estado</th>
-            <th>Fecha</th>
-            <th>Acciones</th>
+            <th>Hora</th>
+            <th>Acción</th>
           </tr>
         </thead>
         <tbody>
           <tr *ngFor="let turn of filteredTurns">
             <td class="turn-number">{{ turn.number }}</td>
+            <td>{{ turn.created_by || '-' }}</td>
             <td>{{ turn.sede }}</td>
             <td>
               <span class="status-badge"
                     [class.status-waiting]="turn.status === 'waiting'"
-                    [class.status-calling]="turn.status === 'called'"
-                    [class.status-completed]="turn.status === 'finished'"
-                    [class.status-cancelled]="turn.status === 'cancelled'">
-                {{ turn.status === 'waiting' ? 'En espera' : turn.status === 'called' ? 'Llamando' : turn.status === 'finished' ? 'Atendido' : turn.status === 'cancelled' ? 'Cancelado' : turn.status }}
+                    [class.status-calling]="turn.status === 'called'">
+                {{ turn.status === 'waiting' ? 'En espera' : 'Llamando' }}
               </span>
             </td>
             <td>{{ turn.created_at }}</td>
             <td>
-              <button *ngIf="turn.status === 'waiting'" (click)="attendVirtual(turn.number)" class="btn-attend btn btn-primary btn-sm">Atender</button>
+              <button *ngIf="turn.status === 'waiting'"
+                      (click)="attendVirtual(turn)"
+                      class="btn-attend btn btn-primary btn-sm">
+                Atender
+              </button>
+              <button *ngIf="turn.status === 'called'"
+                      (click)="resumeVirtual(turn)"
+                      class="btn-resume btn btn-warning btn-sm">
+                Retomar
+              </button>
             </td>
           </tr>
         </tbody>
       </table>
     </div>
 
-    <div class="empty-state" *ngIf="filteredTurns.length === 0">
-      <p>No hay turnos virtuales registrados</p>
+    <div class="empty-state" *ngIf="!loading && filteredTurns.length === 0">
+      <p>No hay turnos virtuales en espera</p>
     </div>
   </div>
 </div>

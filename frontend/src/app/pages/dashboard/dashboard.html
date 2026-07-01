@@ -181,7 +181,8 @@
           </td>
           <td>
             <button class="btn btn-warning btn-sm" (click)="editEmployee(emp)">Editar</button>
-            <button class="btn btn-danger btn-sm" (click)="deleteEmployee(emp.username)">Desactivar</button>
+            <button *ngIf="emp.is_active" class="btn btn-danger btn-sm" (click)="deleteEmployee(emp.username)">Desactivar</button>
+            <button *ngIf="!emp.is_active" class="btn btn-success btn-sm" (click)="activateEmployee(emp.username)">Activar</button>
           </td>
         </tr>
         <tr *ngIf="employees.length === 0">
@@ -201,6 +202,17 @@
       <input type="text" [(ngModel)]="newSedeCity" name="newSedeCity" placeholder="Ciudad" class="form-control" />
       <input type="text" [(ngModel)]="newSedeAddress" name="newSedeAddress" placeholder="Dirección" class="form-control" />
       <button class="btn btn-primary" (click)="createSede()">+ Crear Sede</button>
+    </div>
+
+    <div *ngIf="showSedeForm && editingSede" class="edit-form">
+      <h3>Editar Sede: {{ editingSede.name }}</h3>
+      <div class="sedes-form">
+        <input type="text" [(ngModel)]="editingSede.name" placeholder="Nombre de la sede" class="form-control" />
+        <input type="text" [(ngModel)]="editingSede.city" placeholder="Ciudad" class="form-control" />
+        <input type="text" [(ngModel)]="editingSede.address" placeholder="Dirección" class="form-control" />
+        <button class="btn btn-success btn-sm" (click)="saveSedeEdit()">Guardar</button>
+        <button class="btn btn-secondary btn-sm" (click)="cancelSedeEdit()">Cancelar</button>
+      </div>
     </div>
     <table class="employee-table">
       <thead>

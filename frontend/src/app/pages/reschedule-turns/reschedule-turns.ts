@@ -1,69 +1,116 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Router, NavigationEnd } from '@angular/router';
-import { TurnService } from '../../services/turn.service';
+import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { AuthService } from '../../services/auth.service';
-import { filter } from 'rxjs';
+import { WebsocketService } from '../../services/websocket.service';
+import { takeUntil } from 'rxjs/operators';
+import { Subject } from 'rxjs';
 
 @Component({
   selector: 'app-reschedule-turns',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule],
   templateUrl: './reschedule-turns.html',
   styleUrl: './reschedule-turns.css'
 })
-export class RescheduleTurns implements OnInit {
+export class RescheduleTurns implements OnInit, OnDestroy {
   turns: any[] = [];
   loading = false;
+  rescheduleTarget: string | null = null;
+  rescheduleDate = '';
+
+  private destroy$ = new Subject<void>();
+  private refreshInterval: any;
 
   constructor(
-    private turn: TurnService,
     private auth: AuthService,
-    private router: Router
+    private ws: WebsocketService,
+    private http: HttpClient,
+    private router: Router,
+    private cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
     const role = this.auth.getCurrentRole();
-    if (!role) {
-      this.router.navigate(['/login']);
-    }
-    this.loadTurns();
+    if (!role) { this.router.navigate(['/login']); return; }
 
-    this.router.events.pipe(
-      filter(event => event instanceof NavigationEnd)
-    ).subscribe((event: NavigationEnd) => {
-      if (event.urlAfterRedirects.includes('/reschedule-turns')) {
-        this.loadTurns();
+    this.ws.messages$.pipe(takeUntil(this.destroy$)).subscribe({
+      next: (msg) => {
+        let all: any[] = [];
+        if (Array.isArray(msg)) all = msg;
+        else if (msg?.type === 'all_turns') all = msg.turns || [];
+        else return;
+        this.turns = all.filter((t: any) => t.status === 'waiting' || t.status === 'called');
+        this.cdr.detectChanges();
       }
     });
+
+    if (!this.ws.isConnected()) this.ws.connect();
+    this.loadTurns();
+    this.refreshInterval = setInterval(() => this.loadTurns(), 5000);
+  }
+
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+    if (this.refreshInterval) clearInterval(this.refreshInterval);
+  }
+
+  private getHeaders(): HttpHeaders {
+    const token = this.auth.getToken() || localStorage.getItem('turnify_token') || '';
+    return token ? new HttpHeaders({ Authorization: `Bearer ${token}` }) : new HttpHeaders();
   }
 
   loadTurns(): void {
     this.loading = true;
-    this.turn.getAllTurns().subscribe({
+    this.cdr.detectChanges();
+    this.http.get('/api/all/', { headers: this.getHeaders() }).subscribe({
       next: (data: any) => {
         this.loading = false;
         this.turns = (data.turns || []).filter((t: any) => t.status === 'waiting' || t.status === 'called');
+        this.cdr.detectChanges();
       },
-      error: () => {
-        this.loading = false;
-        this.turns = [];
-      }
+      error: () => { this.loading = false; this.turns = []; this.cdr.detectChanges(); }
     });
   }
 
-  rescheduleTurn(turnNumber: string): void {
-    if (confirm('¿Reagendar este turno? El turno volverá al final de la cola.')) {
-      this.turn.rescheduleSpecificTurn(turnNumber).subscribe({
-        next: (data: any) => {
-          if (data.success) {
-            this.loadTurns();
-          } else {
-            alert(data.message || 'Error al reagendar');
-          }
-        },
-        error: () => alert('Error al reagendar')
-      });
-    }
+  openReschedule(turnNumber: string): void {
+    this.rescheduleTarget = turnNumber;
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    this.rescheduleDate = d.toISOString().slice(0, 16);
+    this.cdr.detectChanges();
+  }
+
+  confirmReschedule(turnNumber: string): void {
+    if (!this.rescheduleDate) { alert('Selecciona una fecha y hora'); return; }
+    this.http.put(
+      `/api/reschedule-turn/${turnNumber}/`,
+      { scheduled_date: this.rescheduleDate },
+      { headers: this.getHeaders() }
+    ).subscribe({
+      next: (data: any) => {
+        this.rescheduleTarget = null;
+        this.rescheduleDate = '';
+        this.loadTurns();
+        this.cdr.detectChanges();
+      },
+      error: () => alert('Error al reagendar')
+    });
+  }
+
+  cancelReschedule(): void {
+    this.rescheduleTarget = null;
+    this.rescheduleDate = '';
+    this.cdr.detectChanges();
+  }
+
+  cancelTurn(turnNumber: string): void {
+    this.http.delete(`/api/cancel-turn/${turnNumber}/`, { headers: this.getHeaders() }).subscribe({
+      next: () => this.loadTurns(),
+      error: () => alert('Error al cancelar el turno')
+    });
   }
 }

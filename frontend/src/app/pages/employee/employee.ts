@@ -1,12 +1,13 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
-import { Router, NavigationEnd } from '@angular/router';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
+import { Router } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
 import { TurnService } from '../../services/turn.service';
 import { WebsocketService } from '../../services/websocket.service';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { NgIf, NgFor } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { filter } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
+import { Subject } from 'rxjs';
 
 @Component({
   selector: 'app-employee',
@@ -21,11 +22,10 @@ export class Employee implements OnInit, OnDestroy {
   currentTurn: any = null;
   stats = { waiting: 0, totalToday: 0, processed: 0 };
   showActionModal = false;
-  filterSede = '';
   sedes: string[] = [];
-  serviceType = 'general';
 
-  private clockInterval: any;
+  private destroy$ = new Subject<void>();
+  private refreshInterval: any;
   currentUser: any = null;
 
   constructor(
@@ -33,7 +33,8 @@ export class Employee implements OnInit, OnDestroy {
     private turn: TurnService,
     private ws: WebsocketService,
     private http: HttpClient,
-    private router: Router
+    private router: Router,
+    private cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
@@ -45,67 +46,81 @@ export class Employee implements OnInit, OnDestroy {
       return;
     }
 
-    this.loadEmployeeData();
-
-    this.router.events.pipe(
-      filter(event => event instanceof NavigationEnd)
-    ).subscribe((event: NavigationEnd) => {
-      if (event.urlAfterRedirects.includes('/employee')) {
-        this.loadEmployeeData();
-      }
-    });
-  }
-
-  loadEmployeeData(): void {
-    this.http.get(`${this.turn.getBaseUrl()}/sedes/`).subscribe({
-      next: (data: any) => {
-        this.sedes = (data.sedes || []).map((s: any) => s.name);
-      },
-      error: () => this.sedes = []
-    });
-
-    this.http.get(`${this.turn.getBaseUrl()}/all/`).subscribe({
-      next: (data: any) => {
-        this.turns = data.turns || [];
-        this.refreshTurnViews();
-      },
-      error: () => {}
-    });
-
-    this.ws.messages$.subscribe({
+    this.ws.messages$.pipe(takeUntil(this.destroy$)).subscribe({
       next: (msg) => {
+        let allTurns: any[] = [];
         if (Array.isArray(msg)) {
-          this.turns = msg;
-          this.refreshTurnViews();
+          allTurns = msg;
+        } else if (msg && msg.type === 'all_turns' && Array.isArray(msg.turns)) {
+          allTurns = msg.turns;
+        } else {
+          return;
         }
+        this.turns = allTurns;
+        this.refreshTurnViews();
+        this.cdr.detectChanges();
       }
     });
 
     if (!this.ws.isConnected()) {
       this.ws.connect();
     }
-    this.ws.send({ action: 'get_all' });
+
+    this.loadEmployeeData();
+    this.refreshInterval = setInterval(() => this.loadEmployeeData(), 5000);
   }
 
   ngOnDestroy(): void {
-    if (this.clockInterval) clearInterval(this.clockInterval);
+    this.destroy$.next();
+    this.destroy$.complete();
+    if (this.refreshInterval) clearInterval(this.refreshInterval);
+  }
+
+  private getHeaders(): HttpHeaders {
+    const token = this.auth.getToken() || localStorage.getItem('turnify_token') || '';
+    return token ? new HttpHeaders({ Authorization: `Bearer ${token}` }) : new HttpHeaders();
+  }
+
+  loadEmployeeData(): void {
+    this.http.get('/api/sedes/', { headers: this.getHeaders() }).subscribe({
+      next: (data: any) => {
+        this.sedes = (data.sedes || []).map((s: any) => s.name);
+        this.cdr.detectChanges();
+      },
+      error: () => this.sedes = []
+    });
+
+    this.http.get('/api/all/', { headers: this.getHeaders() }).subscribe({
+      next: (data: any) => {
+        this.turns = data.turns || [];
+        this.refreshTurnViews();
+        this.cdr.detectChanges();
+      },
+      error: (err) => console.error('Error loading turns:', err)
+    });
+
+    this.ws.send({ action: 'get_all' });
+  }
+
+  private get mySede(): string {
+    return this.currentUser?.sede || '';
   }
 
   refreshTurnViews(): void {
-    this.waitingTurns = this.turns.filter((t: any) => {
-      if (this.filterSede && t.sede !== this.filterSede) return false;
-      return t.status === 'waiting';
-    }).slice(0, 10);
-    this.currentTurn = this.turns.find((t: any) => t.status === 'called') || null;
-    this.stats = {
-      waiting: this.turns.filter((t: any) => t.status === 'waiting').length,
-      totalToday: this.turns.length,
-      processed: this.turns.filter((t: any) => t.status === 'finished').length
-    };
-  }
+    const sede = this.mySede;
+    const myTurns = sede ? this.turns.filter((t: any) => t.sede === sede) : this.turns;
 
-  onSedeFilterChange(): void {
-    this.refreshTurnViews();
+    this.waitingTurns = myTurns
+      .filter((t: any) => t.status === 'waiting')
+      .slice(0, 10);
+
+    this.currentTurn = myTurns.find((t: any) => t.status === 'called') || null;
+
+    this.stats = {
+      waiting: myTurns.filter((t: any) => t.status === 'waiting').length,
+      totalToday: myTurns.length,
+      processed: myTurns.filter((t: any) => t.status === 'finished').length
+    };
   }
 
   callNext(): void {
@@ -114,6 +129,7 @@ export class Employee implements OnInit, OnDestroy {
         if (data.number) {
           this.ws.send({ action: 'get_all' });
           this.showActionModal = true;
+          this.cdr.detectChanges();
         } else {
           alert('No hay turnos en espera');
         }
@@ -128,6 +144,7 @@ export class Employee implements OnInit, OnDestroy {
         if (data.success) {
           this.ws.send({ action: 'get_all' });
           this.showActionModal = true;
+          this.cdr.detectChanges();
         } else {
           alert(data.message || 'Error al llamar turno');
         }
@@ -138,9 +155,10 @@ export class Employee implements OnInit, OnDestroy {
 
   finishCurrent(): void {
     this.turn.finishCurrent().subscribe({
-      next: (data: any) => {
-        this.ws.send({ action: 'get_all' });
+      next: () => {
         this.showActionModal = false;
+        this.ws.send({ action: 'get_all' });
+        this.cdr.detectChanges();
       },
       error: () => alert('No hay turno activo')
     });
@@ -148,42 +166,38 @@ export class Employee implements OnInit, OnDestroy {
 
   rescheduleCurrent(): void {
     this.turn.rescheduleCurrent().subscribe({
-      next: (data: any) => {
-        this.ws.send({ action: 'get_all' });
+      next: () => {
         this.showActionModal = false;
+        this.ws.send({ action: 'get_all' });
+        this.cdr.detectChanges();
+        this.router.navigate(['/reschedule-turns']);
       },
       error: () => alert('Error al reagendar turno')
     });
   }
 
   cancelCurrent(): void {
-    if (confirm('¿Estás seguro de cancelar este turno?')) {
-      this.turn.cancelCurrent().subscribe({
-        next: (data: any) => {
-          this.ws.send({ action: 'get_all' });
-          this.showActionModal = false;
-        },
-        error: () => alert('Error al cancelar turno')
-      });
-    }
+    this.turn.cancelCurrent().subscribe({
+      next: () => {
+        this.showActionModal = false;
+        this.ws.send({ action: 'get_all' });
+        this.cdr.detectChanges();
+      },
+      error: () => alert('Error al cancelar turno')
+    });
   }
 
   logout(): void {
     this.auth.clearSession();
-    this.auth.logout().subscribe({
-      next: () => {},
-      error: () => {}
-    });
+    this.auth.logout().subscribe({ next: () => {}, error: () => {} });
     this.router.navigate(['/login']);
   }
 
   getEmployeeName(): string {
-    const user = this.auth.getCurrentUser();
-    return user?.full_name || user?.username || 'Empleado';
+    return this.currentUser?.full_name || this.currentUser?.username || 'Empleado';
   }
 
   getEmployeeSede(): string {
-    const user = this.auth.getCurrentUser();
-    return user?.sede || 'N/A';
+    return this.currentUser?.sede || 'N/A';
   }
 }

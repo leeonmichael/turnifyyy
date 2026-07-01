@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { Router } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
 import { TurnService } from '../../services/turn.service';
@@ -6,6 +6,8 @@ import { WebsocketService } from '../../services/websocket.service';
 import { HttpClient } from '@angular/common/http';
 import { NgIf, NgFor, NgClass } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 
 declare var Chart: any;
 
@@ -75,13 +77,15 @@ export class Dashboard implements OnInit, OnDestroy {
   };
 
    private intervalId: any;
+   private destroy$ = new Subject<void>();
 
   constructor(
     private auth: AuthService,
     private turn: TurnService,
     private http: HttpClient,
     private ws: WebsocketService,
-    private router: Router
+    private router: Router,
+    private cdr: ChangeDetectorRef
   ) {}
 
    ngOnInit(): void {
@@ -91,13 +95,14 @@ export class Dashboard implements OnInit, OnDestroy {
       return;
     }
 
-    this.ws.messages$.subscribe({
+    this.ws.messages$.pipe(takeUntil(this.destroy$)).subscribe({
       next: (msg) => {
         if (Array.isArray(msg)) {
           this.turns = msg;
           this.currentTurn = this.turns.find((t: any) => t.status === 'called');
           const next = this.turns.find((t: any) => t.status === 'waiting');
           this.nextTurn = next?.number || 'NO HAY';
+          this.cdr.detectChanges();
         }
       }
     });
@@ -116,6 +121,8 @@ export class Dashboard implements OnInit, OnDestroy {
     if (this.intervalId) {
       clearInterval(this.intervalId);
     }
+    this.destroy$.next();
+    this.destroy$.complete();
   }
 
   initCharts(): void {
@@ -181,21 +188,34 @@ export class Dashboard implements OnInit, OnDestroy {
       next: (data: any) => {
         this.stats = data;
         this.updateCharts(data);
+        this.cdr.detectChanges();
       },
-      error: (err) => console.error('Error loading stats:', err)
+      error: (err) => {
+        console.error('Error loading stats:', err);
+        this.cdr.detectChanges();
+      }
     });
 
     this.turn.getEmployees().subscribe({
       next: (data: any) => {
         this.employees = data.employees || [];
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        console.error('Error loading employees:', err);
+        this.cdr.detectChanges();
       }
     });
 
     this.http.get(`${this.turn.getBaseUrl()}/sedes/`).subscribe({
       next: (data: any) => {
         this.sedes = data.sedes || [];
+        this.cdr.detectChanges();
       },
-      error: () => this.sedes = []
+      error: () => {
+        this.sedes = [];
+        this.cdr.detectChanges();
+      }
     });
   }
 
@@ -317,18 +337,29 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   deleteEmployee(username: string): void {
-    if (confirm(`¿Desactivar empleado ${username}?`)) {
-      this.http.post(`${this.turn.getBaseUrl()}/deactivate-employee/${username}/`, {}).subscribe({
-        next: (data: any) => {
-          if (data.success) {
-            this.loadAllData();
-          } else {
-            alert(data.message);
-          }
-        },
-        error: (err) => alert(err?.error?.message || 'Error al desactivar empleado')
-      });
-    }
+    this.http.post(`${this.turn.getBaseUrl()}/deactivate-employee/${username}/`, {}).subscribe({
+      next: (data: any) => {
+        if (data.success) {
+          this.loadAllData();
+        } else {
+          alert(data.message);
+        }
+      },
+      error: (err) => alert(err?.error?.message || 'Error al desactivar empleado')
+    });
+  }
+
+  activateEmployee(username: string): void {
+    this.http.post(`${this.turn.getBaseUrl()}/toggle-user-active/${username}/`, {}).subscribe({
+      next: (data: any) => {
+        if (data.success) {
+          this.loadAllData();
+        } else {
+          alert(data.message);
+        }
+      },
+      error: (err) => alert(err?.error?.message || 'Error al activar empleado')
+    });
   }
 
   exportCSV(): void {
@@ -372,6 +403,11 @@ export class Dashboard implements OnInit, OnDestroy {
   editSede(sede: any): void {
     this.editingSede = { ...sede };
     this.showSedeForm = true;
+  }
+
+  cancelSedeEdit(): void {
+    this.showSedeForm = false;
+    this.editingSede = null;
   }
 
   saveSedeEdit(): void {

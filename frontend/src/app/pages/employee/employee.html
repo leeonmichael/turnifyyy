@@ -69,12 +69,9 @@
     </div>
   </div>
 
-  <div class="filter-section">
-    <label class="filter-label">Filtrar por Sede:</label>
-    <select [(ngModel)]="filterSede" (change)="onSedeFilterChange()" class="form-control form-select">
-      <option value="">Todas las sedes</option>
-      <option *ngFor="let sede of sedes">{{ sede }}</option>
-    </select>
+  <div class="sede-badge-section">
+    <span class="sede-badge">📍 Sede: {{ getEmployeeSede() }}</span>
+    <span class="sede-info">Solo ves los turnos de tu sede</span>
   </div>
 
   <div class="waiting-queue">

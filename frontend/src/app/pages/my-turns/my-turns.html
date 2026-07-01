@@ -1,47 +1,123 @@
-<div class="my-turns-container fade-in-up">
-  <div class="turns-card">
-    <h1>Mis Turnos</h1>
+<div class="my-turns-container">
 
-    <div *ngIf="loading" class="loading-state">
-      Cargando turnos...
-    </div>
-
-    <div *ngIf="!loading && turns.length === 0" class="empty-state">
-      <p>No tienes turnos registrados</p>
-      <a routerLink="/home" class="btn btn-primary">Pedir un turno</a>
-    </div>
-
-    <table *ngIf="!loading && turns.length > 0" class="turns-table">
-      <thead>
-        <tr>
-          <th>Número</th>
-          <th>Tipo</th>
-          <th>Sede</th>
-          <th>Estado</th>
-          <th>Fecha</th>
-          <th>Acciones</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr *ngFor="let turn of turns">
-          <td class="turn-number">{{ turn.number }}</td>
-          <td>{{ turn.service_type }}</td>
-          <td>{{ turn.sede }}</td>
-          <td>
-            <span class="status-badge"
-                  [class.status-waiting]="turn.status === 'waiting'"
-                  [class.status-calling]="turn.status === 'called'"
-                  [class.status-completed]="turn.status === 'finished'"
-                  [class.status-cancelled]="turn.status === 'cancelled'">
-              {{ turn.status === 'waiting' ? 'En espera' : turn.status === 'called' ? 'Llamando' : turn.status === 'finished' ? 'Atendido' : turn.status === 'cancelled' ? 'Cancelado' : turn.status }}
-            </span>
-          </td>
-          <td>{{ turn.created_at }}</td>
-          <td>
-            <button *ngIf="turn.status === 'waiting'" (click)="cancelTurn(turn.number)" class="btn-cancel btn btn-danger btn-sm">Cancelar</button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+  <!-- Header -->
+  <div class="page-header">
+    <h1 class="page-title">Mis Turnos</h1>
+    <p class="page-subtitle">Historial completo de todos tus turnos</p>
   </div>
+
+  <!-- Summary cards -->
+  @if (!loading && turns.length > 0) {
+    <div class="summary-row">
+      <div class="summary-card summary-total">
+        <span class="summary-number">{{ turns.length }}</span>
+        <span class="summary-label">Total</span>
+      </div>
+      <div class="summary-card summary-active">
+        <span class="summary-number">{{ activeCount }}</span>
+        <span class="summary-label">Activos</span>
+      </div>
+      <div class="summary-card summary-finished">
+        <span class="summary-number">{{ finishedCount }}</span>
+        <span class="summary-label">Atendidos</span>
+      </div>
+      <div class="summary-card summary-cancelled">
+        <span class="summary-number">{{ cancelledCount }}</span>
+        <span class="summary-label">Cancelados</span>
+      </div>
+    </div>
+  }
+
+  <!-- Loading -->
+  @if (loading) {
+    <div class="state-box">
+      <div class="spinner"></div>
+      <p>Cargando historial...</p>
+    </div>
+  }
+
+  <!-- Empty -->
+  @if (!loading && turns.length === 0) {
+    <div class="state-box empty-state">
+      <div class="empty-icon">🎫</div>
+      <h3>No tienes turnos registrados</h3>
+      <p>Cuando pidas un turno, aparecerá aquí con su estado.</p>
+      <a routerLink="/home" class="btn-primary-link">Pedir un turno</a>
+    </div>
+  }
+
+  <!-- History list -->
+  @if (!loading && turns.length > 0) {
+    <div class="history-list">
+      @for (turn of turns; track turn.id) {
+        <div
+          class="history-item"
+          [class.item-waiting]="turn.status === 'waiting'"
+          [class.item-called]="turn.status === 'called'"
+          [class.item-finished]="turn.status === 'finished'"
+          [class.item-cancelled]="turn.status === 'cancelled'"
+        >
+          <!-- Left accent bar -->
+          <div class="accent-bar"></div>
+
+          <!-- Turn number -->
+          <div class="turn-number-col">
+            <span class="turn-number">{{ turn.number }}</span>
+            <span class="turn-sede">{{ turn.sede }}</span>
+          </div>
+
+          <!-- Main info -->
+          <div class="turn-info-col">
+            <div class="turn-type">{{ getServiceLabel(turn.service_type) }}</div>
+            <div class="turn-dates">
+              <span class="date-item">
+                <span class="date-icon">📅</span>
+                Solicitado: {{ turn.created_at }}
+              </span>
+              @if (turn.finished_at && turn.status === 'finished') {
+                <span class="date-item">
+                  <span class="date-icon">✅</span>
+                  Atendido: {{ turn.finished_at }}
+                </span>
+              }
+              @if (turn.finished_at && turn.status === 'cancelled') {
+                <span class="date-item">
+                  <span class="date-icon">❌</span>
+                  Cancelado: {{ turn.finished_at }}
+                </span>
+              }
+            </div>
+            @if (turn.scheduled_for) {
+              <div class="rescheduled-banner">
+                <span class="reschedule-icon">🔄</span>
+                Reagendado para: <strong>{{ turn.scheduled_for }}</strong>
+              </div>
+            }
+          </div>
+
+          <!-- Status -->
+          <div class="turn-status-col">
+            <span class="status-badge" [ngClass]="getStatusClass(turn.status)">
+              {{ getStatusLabel(turn.status) }}
+            </span>
+          </div>
+
+          <!-- Actions -->
+          <div class="turn-actions-col">
+            @if (turn.status === 'waiting') {
+              <button (click)="cancelTurn(turn.id)" class="btn-cancel">
+                Cancelar
+              </button>
+            } @else {
+              <span class="no-action">—</span>
+            }
+          </div>
+        </div>
+      }
+    </div>
+
+    <div class="refresh-hint">
+      Se actualiza automáticamente cada 10 segundos.
+    </div>
+  }
 </div>

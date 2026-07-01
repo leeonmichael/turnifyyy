@@ -232,7 +232,10 @@ def login_user(request):
             'role': register.role,
             'cedula': register.cedula,
             'email': register.email,
-            'full_name': register.full_name
+            'full_name': register.full_name,
+            'sede': register.sede,
+            'phone': register.phone,
+            'cargo': register.cargo
         }
     })
 
@@ -324,8 +327,16 @@ def update_profile(request):
 
 @csrf_exempt
 @api_view(['GET'])
+@jwt_required
+@role_required('admin', 'employee')
 def get_users(request):
-    users = Register.objects.all().order_by('-created_at')
+    token = get_token_from_request(request)
+    payload = decode_access_token(token) if token else None
+    calling_role = (payload.get('role') or '') if payload else ''
+    if calling_role == 'employee':
+        users = Register.objects.filter(role='client').order_by('-created_at')
+    else:
+        users = Register.objects.all().order_by('-created_at')
     data = [{
         'username': u.username,
         'role': u.role,
@@ -345,10 +356,18 @@ def get_users(request):
 
 @csrf_exempt
 @api_view(['DELETE'])
+@jwt_required
+@role_required('admin', 'employee')
 def delete_user(request, username):
+    token = get_token_from_request(request)
+    payload = decode_access_token(token) if token else None
+    calling_role = (payload.get('role') or '') if payload else ''
+
     register = Register.objects.filter(username=username).first()
     if not register:
         return Response({'success': False, 'message': 'Usuario no encontrado'}, status=status.HTTP_404_NOT_FOUND)
+    if calling_role == 'employee' and register.role != 'client':
+        return Response({'success': False, 'message': 'Solo puedes eliminar clientes'}, status=status.HTTP_403_FORBIDDEN)
 
     username_to_delete = register.username
     register.delete()
@@ -566,6 +585,41 @@ def deactivate_employee(request, username):
 
 
 @csrf_exempt
+@api_view(['POST'])
+@jwt_required
+@role_required('admin', 'employee')
+def toggle_user_active(request, username):
+    token = get_token_from_request(request)
+    payload = decode_access_token(token) if token else None
+    calling_role = (payload.get('role') or '') if payload else ''
+
+    user = Register.objects.filter(username=username).first()
+    if not user:
+        return Response({'success': False, 'message': 'Usuario no encontrado'}, status=status.HTTP_404_NOT_FOUND)
+    if calling_role == 'employee' and user.role != 'client':
+        return Response({'success': False, 'message': 'Solo puedes modificar clientes'}, status=status.HTTP_403_FORBIDDEN)
+
+    user.is_active = not user.is_active
+    user.save()
+
+    if db:
+        try:
+            db.collection("users").document(username).update({
+                'is_active': user.is_active,
+                'updated_at': timezone.now().isoformat()
+            })
+        except Exception:
+            pass
+
+    action = 'activado' if user.is_active else 'desactivado'
+    return Response({
+        'success': True,
+        'message': f'Usuario {username} {action} correctamente',
+        'is_active': user.is_active
+    })
+
+
+@csrf_exempt
 @api_view(['GET'])
 @jwt_required
 @role_required('admin')
@@ -660,16 +714,47 @@ def get_admin_statistics(request):
 
 
 @csrf_exempt
+@api_view(['GET'])
+def get_my_active_turn(request):
+    token = get_token_from_request(request)
+    payload = decode_access_token(token) if token else None
+    username = (payload.get('username') or '') if payload else ''
+    if not username:
+        return Response({'turn': None})
+    turn = Turn.objects.filter(created_by=username, status__in=['waiting', 'called']).first()
+    if not turn:
+        return Response({'turn': None})
+    return Response({'turn': {
+        'id': turn.id,
+        'number': turn.number,
+        'status': turn.status,
+        'service_type': turn.service_type,
+        'sede': turn.sede or '',
+        'created_at': turn.created_at.strftime('%d/%m/%Y %H:%M') if turn.created_at else '',
+    }})
+
+
+@csrf_exempt
 @api_view(['POST'])
 def create_turn(request):
     service_type = request.data.get('service_type', 'general')
     sede = request.data.get('sede', 'MOSQUERA')
     token = get_token_from_request(request)
     payload = decode_access_token(token) if token else None
-    user_name = payload.get('username', '') if payload else ''
+    user_name = (payload.get('username') or '') if payload else ''
+
+    # Prevent a client from having more than one active turn
+    if user_name:
+        existing = Turn.objects.filter(created_by=user_name, status__in=['waiting', 'called']).first()
+        if existing:
+            return Response({
+                'error': 'Ya tienes un turno activo',
+                'existing_number': existing.number,
+                'existing_sede': existing.sede or ''
+            }, status=400)
 
     prefix = get_turn_prefix(service_type)
-    number = generate_turn(prefix)
+    number = generate_turn(prefix, sede)
 
     client_data = {}
     created_by = None
@@ -687,7 +772,7 @@ def create_turn(request):
             }
             created_by = user_name
 
-    Turn.objects.create(number=number, service_type=service_type, sede=sede)
+    Turn.objects.create(number=number, service_type=service_type, sede=sede, created_by=user_name)
 
     if db:
         try:
@@ -718,24 +803,41 @@ def broadcast_turn_update():
             'service_type': t.service_type,
             'sede': t.sede,
             'created_at': t.created_at.strftime('%H:%M') if t.created_at else '',
-            'called_by': called_by_name
+            'called_by': called_by_name,
+            'created_by': t.created_by or '',
+            'scheduled_for': t.scheduled_for.strftime('%d/%m/%Y %H:%M') if t.scheduled_for else ''
         })
-    channel_layer = get_channel_layer()
-    async_to_sync(channel_layer.group_send)('turns', {'type': 'turn_update', 'data': turns_data})
+    try:
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            async_to_sync(channel_layer.group_send)('turns', {'type': 'turn_update', 'data': turns_data})
+    except Exception:
+        pass
 
 
 @csrf_exempt
 @api_view(['POST'])
+@jwt_required
+@role_required('admin', 'employee')
 def call_next(request):
     service_type = request.data.get('service_type', '')
     token = get_token_from_request(request)
     payload = decode_access_token(token) if token else None
-    called_by = payload.get('username', '') if payload else ''
+    called_by = (payload.get('username') or '') if payload else ''
+    calling_role = (payload.get('role') or '') if payload else ''
 
+    employee_sede = ''
+    if calling_role == 'employee' and called_by:
+        emp = Register.objects.filter(username=called_by).first()
+        employee_sede = (emp.sede or '') if emp else ''
+
+    qs = Turn.objects.filter(status='waiting')
+    if employee_sede:
+        qs = qs.filter(sede=employee_sede)
     if service_type:
-        turn = Turn.objects.filter(status='waiting', service_type=service_type).order_by('created_at').first()
-    else:
-        turn = Turn.objects.filter(status='waiting').order_by('created_at').first()
+        qs = qs.filter(service_type=service_type)
+
+    turn = qs.order_by('created_at').first()
     if turn:
         turn.status = 'called'
         turn.assigned_employee = called_by
@@ -756,8 +858,18 @@ def call_next(request):
 
 @csrf_exempt
 @api_view(['GET'])
+@jwt_required
+@role_required('admin', 'employee')
 def get_all_turns(request):
-    turns = Turn.objects.all().order_by('-created_at')
+    token = get_token_from_request(request)
+    payload = decode_access_token(token) if token else None
+    username = (payload.get('username') or '') if payload else ''
+    role = (payload.get('role') or '') if payload else ''
+    sede = _get_employee_sede(username, role)
+    if sede:
+        turns = Turn.objects.filter(sede=sede).order_by('-created_at')
+    else:
+        turns = Turn.objects.all().order_by('-created_at')
     turns_data = []
     for t in turns:
         called_by_name = None
@@ -769,7 +881,9 @@ def get_all_turns(request):
             'service_type': t.service_type,
             'sede': t.sede,
             'created_at': t.created_at.strftime('%H:%M') if t.created_at else '',
-            'called_by': called_by_name
+            'called_by': called_by_name,
+            'created_by': t.created_by or '',
+            'scheduled_for': t.scheduled_for.strftime('%d/%m/%Y %H:%M') if t.scheduled_for else ''
         })
     return Response({'turns': turns_data})
 
@@ -785,6 +899,8 @@ def get_current_turn(request):
 
 @csrf_exempt
 @api_view(['GET'])
+@jwt_required
+@role_required('admin', 'employee')
 def get_waiting_turns(request):
     service_type = request.GET.get('service_type', 'general')
     turns = Turn.objects.filter(status='waiting', service_type=service_type).order_by('created_at')
@@ -807,14 +923,26 @@ def get_next_turn(request):
     return Response({'number': None})
 
 
+def _get_employee_sede(username, role):
+    if role == 'employee' and username:
+        emp = Register.objects.filter(username=username).first()
+        return (emp.sede or '') if emp else ''
+    return ''
+
+
 @csrf_exempt
 @api_view(['POST'])
 def finish_current_turn(request):
     token = get_token_from_request(request)
     payload = decode_access_token(token) if token else None
-    finished_by = payload.get('username', '') if payload else ''
+    finished_by = (payload.get('username') or '') if payload else ''
+    role = (payload.get('role') or '') if payload else ''
+    sede = _get_employee_sede(finished_by, role)
 
-    turn = Turn.objects.filter(status='called').order_by('-created_at').first()
+    qs = Turn.objects.filter(status='called')
+    if sede:
+        qs = qs.filter(sede=sede)
+    turn = qs.order_by('-created_at').first()
     if turn:
         turn.status = 'finished'
         turn.finished_at = timezone.now()
@@ -835,13 +963,24 @@ def finish_current_turn(request):
 
 @csrf_exempt
 @api_view(['POST'])
+@jwt_required
+@role_required('admin', 'employee')
 def call_specific_turn(request):
     turn_number = request.data.get('turn_number', '')
     token = get_token_from_request(request)
     payload = decode_access_token(token) if token else None
-    called_by = payload.get('username', '') if payload else ''
+    called_by = (payload.get('username') or '') if payload else ''
+    calling_role = (payload.get('role') or '') if payload else ''
 
-    turn = Turn.objects.filter(number=turn_number).first()
+    employee_sede = ''
+    if calling_role == 'employee' and called_by:
+        emp = Register.objects.filter(username=called_by).first()
+        employee_sede = (emp.sede or '') if emp else ''
+
+    qs = Turn.objects.filter(number=turn_number, status='waiting')
+    if employee_sede:
+        qs = qs.filter(sede=employee_sede)
+    turn = qs.first()
     if turn:
         turn.status = 'called'
         turn.assigned_employee = called_by
@@ -863,7 +1002,16 @@ def call_specific_turn(request):
 @csrf_exempt
 @api_view(['POST'])
 def reschedule_current(request):
-    turn = Turn.objects.filter(status='called').order_by('-created_at').first()
+    token = get_token_from_request(request)
+    payload = decode_access_token(token) if token else None
+    username = (payload.get('username') or '') if payload else ''
+    role = (payload.get('role') or '') if payload else ''
+    sede = _get_employee_sede(username, role)
+
+    qs = Turn.objects.filter(status='called')
+    if sede:
+        qs = qs.filter(sede=sede)
+    turn = qs.order_by('-created_at').first()
     if not turn:
         return Response({'success': False, 'message': 'No hay turno en progreso'}, status=404)
     turn.status = 'waiting'
@@ -882,8 +1030,19 @@ def reschedule_current(request):
 
 @csrf_exempt
 @api_view(['POST'])
+@jwt_required
+@role_required('admin', 'employee')
 def cancel_current(request):
-    turn = Turn.objects.filter(status='called').order_by('-created_at').first()
+    token = get_token_from_request(request)
+    payload = decode_access_token(token) if token else None
+    username = (payload.get('username') or '') if payload else ''
+    role = (payload.get('role') or '') if payload else ''
+    sede = _get_employee_sede(username, role)
+
+    qs = Turn.objects.filter(status='called')
+    if sede:
+        qs = qs.filter(sede=sede)
+    turn = qs.order_by('-created_at').first()
     if not turn:
         return Response({'success': False, 'message': 'No hay turno en progreso'}, status=404)
     turn_number = turn.number
@@ -902,22 +1061,34 @@ def cancel_current(request):
 
 @csrf_exempt
 @api_view(['PUT'])
+@jwt_required
+@role_required('admin', 'employee')
 def reschedule_turn(request, turn_number):
+    from django.utils.dateparse import parse_datetime
     turn = Turn.objects.filter(number=turn_number).first()
     if not turn:
         return Response({'success': False, 'message': 'Turno no encontrado'}, status=404)
     turn.status = 'waiting'
+    scheduled_date_str = request.data.get('scheduled_date', '')
+    if scheduled_date_str:
+        try:
+            scheduled_dt = parse_datetime(scheduled_date_str)
+            if scheduled_dt:
+                turn.scheduled_for = scheduled_dt
+        except Exception:
+            pass
     turn.save()
     if db:
         try:
             db.collection('turns').document(turn_number).update({
                 'status': 'waiting',
+                'scheduled_for': scheduled_date_str,
                 'rescheduled_at': timezone.now().isoformat()
             })
         except Exception:
             pass
     broadcast_turn_update()
-    return Response({'success': True, 'message': 'Turno reagendado'})
+    return Response({'success': True, 'message': 'Turno reagendado', 'scheduled_for': scheduled_date_str})
 
 
 @csrf_exempt
@@ -981,6 +1152,24 @@ def cancel_turn(request, turn_number):
         except Exception:
             pass
     Turn.objects.filter(number=turn_number).delete()
+    broadcast_turn_update()
+    return Response({'success': True})
+
+
+@csrf_exempt
+@api_view(['DELETE'])
+def cancel_turn_by_id(request, turn_id):
+    token = get_token_from_request(request)
+    payload = decode_access_token(token) if token else None
+    username = (payload.get('username') or '') if payload else ''
+
+    turn = Turn.objects.filter(id=turn_id, created_by=username, status='waiting').first()
+    if not turn:
+        return Response({'error': 'Turno no encontrado o no se puede cancelar'}, status=404)
+
+    turn.status = 'cancelled'
+    turn.finished_at = timezone.now()
+    turn.save()
     broadcast_turn_update()
     return Response({'success': True})
 
@@ -1073,16 +1262,18 @@ def my_turns(request):
     if not username:
         return Response({'turns': []})
     
-    turns = Turn.objects.filter(client_data__icontains=username).order_by('-created_at')
+    turns = Turn.objects.filter(created_by=username).order_by('-created_at')
     turns_data = [{
+        'id': t.id,
         'number': t.number,
         'status': t.status,
         'service_type': t.service_type,
-        'sede': t.sede,
-        'created_at': t.created_at.strftime('%Y-%m-%d %H:%M') if t.created_at else '',
-        'finished_at': t.finished_at.strftime('%Y-%m-%d %H:%M') if t.finished_at else None
+        'sede': t.sede or 'N/A',
+        'created_at': t.created_at.strftime('%d/%m/%Y %H:%M') if t.created_at else '',
+        'finished_at': t.finished_at.strftime('%d/%m/%Y %H:%M') if t.finished_at else None,
+        'scheduled_for': t.scheduled_for.strftime('%d/%m/%Y %H:%M') if t.scheduled_for else None,
     } for t in turns]
-    
+
     return Response({'turns': turns_data})
 
 

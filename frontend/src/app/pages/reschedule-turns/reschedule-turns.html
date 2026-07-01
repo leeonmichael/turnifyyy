@@ -1,18 +1,19 @@
 <div class="reschedule-container fade-in-up">
   <div class="reschedule-card">
     <h1>Reagendar Turnos</h1>
+    <p class="subtitle">Turnos activos · actualización en tiempo real</p>
 
-    <div *ngIf="loading" class="loading-state">
-      Cargando turnos...
-    </div>
+    <div *ngIf="loading" class="loading-state">Cargando turnos...</div>
 
     <table *ngIf="!loading && turns.length > 0" class="turns-table">
       <thead>
         <tr>
-          <th>Numero</th>
+          <th>Número</th>
           <th>Tipo</th>
+          <th>Cliente</th>
           <th>Sede</th>
           <th>Estado</th>
+          <th>Reagendado para</th>
           <th>Acciones</th>
         </tr>
       </thead>
@@ -20,25 +21,44 @@
         <tr *ngFor="let turn of turns">
           <td class="turn-number">{{ turn.number }}</td>
           <td>{{ turn.service_type }}</td>
-          <td>{{ turn.sede }}</td>
+          <td>{{ turn.created_by || '-' }}</td>
+          <td>{{ turn.sede || '-' }}</td>
           <td>
             <span class="status-badge"
                   [class.status-waiting]="turn.status === 'waiting'"
-                  [class.status-calling]="turn.status === 'called'"
-                  [class.status-completed]="turn.status === 'finished'"
-                  [class.status-cancelled]="turn.status === 'cancelled'">
-              {{ turn.status === 'waiting' ? 'En espera' : turn.status === 'called' ? 'Llamando' : turn.status === 'finished' ? 'Atendido' : turn.status === 'cancelled' ? 'Cancelado' : turn.status }}
+                  [class.status-calling]="turn.status === 'called'">
+              {{ turn.status === 'waiting' ? 'En espera' : 'Llamando' }}
             </span>
           </td>
           <td>
-            <button *ngIf="turn.status === 'waiting' || turn.status === 'called'" (click)="rescheduleTurn(turn.number)" class="btn-reschedule btn btn-warning btn-sm">Reagendar</button>
+            <span *ngIf="turn.scheduled_for" class="scheduled-badge">📅 {{ turn.scheduled_for }}</span>
+            <span *ngIf="!turn.scheduled_for" class="no-date">—</span>
+          </td>
+          <td>
+            <!-- Formulario de reagendar inline -->
+            <div *ngIf="rescheduleTarget === turn.number" class="reschedule-form">
+              <input type="datetime-local" [(ngModel)]="rescheduleDate" class="date-input" />
+              <div class="form-btns">
+                <button (click)="confirmReschedule(turn.number)" class="btn btn-success btn-sm">✓ Confirmar</button>
+                <button (click)="cancelReschedule()" class="btn btn-secondary btn-sm">Cancelar</button>
+              </div>
+            </div>
+            <!-- Botones normales -->
+            <div *ngIf="rescheduleTarget !== turn.number" class="action-btns">
+              <button (click)="openReschedule(turn.number)" class="btn-reschedule btn btn-warning btn-sm">
+                📅 Reagendar
+              </button>
+              <button (click)="cancelTurn(turn.number)" class="btn-noshow btn btn-danger btn-sm">
+                ✗ No llegó
+              </button>
+            </div>
           </td>
         </tr>
       </tbody>
     </table>
 
     <div *ngIf="!loading && turns.length === 0" class="empty-state">
-      No hay turnos para reagendar
+      No hay turnos activos para reagendar
     </div>
   </div>
 </div>

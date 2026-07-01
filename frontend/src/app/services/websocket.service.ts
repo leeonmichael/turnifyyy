@@ -16,7 +16,7 @@ export class WebsocketService {
   constructor(private zone: NgZone) {}
 
   connect(): void {
-    if (this.socket$ && this.socket$.closed) return;
+    if (this.socket$ && !this.socket$.closed) return;
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
