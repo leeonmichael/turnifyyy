@@ -5,7 +5,7 @@
 - **Juan Manuel Baracaldo**
 - **Nicolas Ruiz**
 
-📚 **Instructor:** Crhistian  
+📚 **Instructor:** Crhistian y Steffy
 🆔 **Ficha:** 3203084  
 
 ---
