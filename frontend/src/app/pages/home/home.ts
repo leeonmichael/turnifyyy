@@ -32,6 +32,7 @@ export class Home implements OnInit, OnDestroy {
   // ---- View ----
   view: View = 'request';
   showTurnModal = false;
+  showChatbotModal = false;
 
   // ---- Active turn ----
   userTurn: string | null = null;
@@ -339,6 +340,13 @@ export class Home implements OnInit, OnDestroy {
   }
 
   closeModal(): void { this.showTurnModal = false; }
+
+  openChatbotModal(): void  { this.showChatbotModal = true; }
+  closeChatbotModal(): void { this.showChatbotModal = false; }
+  goToChatbot(): void {
+    this.showChatbotModal = false;
+    this.router.navigate(['/chatbot']);
+  }
 
   logout(): void {
     this.auth.clearSession();

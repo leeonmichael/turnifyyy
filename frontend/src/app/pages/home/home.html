@@ -238,6 +238,36 @@
   </div>
 }
 
+<!-- ── Chatbot floating bubble (solo cliente) ── -->
+@if (currentUser?.role === 'client' || !currentUser) {
+  <button class="chatbot-bubble" (click)="openChatbotModal()" title="Asistente virtual">
+    <span class="chatbot-bubble-icon">🤖</span>
+    <span class="chatbot-bubble-label">Ayuda</span>
+  </button>
+}
+
+<!-- ── Modal: redirigir al chatbot ── -->
+@if (showChatbotModal) {
+  <div class="modal-overlay" (click)="closeChatbotModal()">
+    <div class="modal-dialog chatbot-modal-dialog" (click)="$event.stopPropagation()">
+      <div class="modal-icon">🤖</div>
+      <h2 class="modal-title">Asistente Virtual</h2>
+      <p class="modal-hint">
+        Serás redirigido al <strong>Chatbot de Turnify</strong>.<br>
+        Nuestro asistente con IA puede ayudarte a agendar tu turno, responder preguntas frecuentes y orientar a personas de la tercera edad.
+      </p>
+      <div class="chatbot-modal-features">
+        <span class="feature-chip">📋 Agendar turnos</span>
+        <span class="feature-chip">⏱️ Tiempos de espera</span>
+        <span class="feature-chip">👴 Atención preferencial</span>
+        <span class="feature-chip">❓ Preguntas frecuentes</span>
+      </div>
+      <button class="get-turn-btn chatbot-go-btn" (click)="goToChatbot()">Ir al Chatbot</button>
+      <button class="btn-cancel-turn" style="margin-top:0.5rem;width:100%;border-radius:10px;" (click)="closeChatbotModal()">Cancelar</button>
+    </div>
+  </div>
+}
+
 <!-- Modal turno asignado -->
 @if (showTurnModal) {
   <div class="modal-overlay" (click)="closeModal()">

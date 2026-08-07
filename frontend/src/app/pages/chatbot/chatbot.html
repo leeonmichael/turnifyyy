@@ -1,0 +1,107 @@
+<div class="chatbot-page">
+
+  <!-- ── Header ── -->
+  <div class="chat-header">
+    <button class="back-btn" (click)="goBack()">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="15 18 9 12 15 6"></polyline>
+      </svg>
+    </button>
+
+    <div class="bot-identity">
+      <div class="bot-avatar">
+        <span class="bot-icon">🤖</span>
+        <span class="online-dot"></span>
+      </div>
+      <div class="bot-info">
+        <div class="bot-name">Asistente Turnify</div>
+        <div class="bot-status">En línea · Responde al instante</div>
+      </div>
+    </div>
+
+    <button class="clear-btn" (click)="clearChat()" title="Limpiar chat">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="3 6 5 6 21 6"></polyline>
+        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+        <path d="M10 11v6M14 11v6"></path>
+      </svg>
+    </button>
+  </div>
+
+  <!-- ── Chat body ── -->
+  <div class="chat-body" #chatBody>
+
+    <!-- Mensajes -->
+    @for (msg of messages; track msg.id) {
+      <div class="msg-row" [class.msg-user]="msg.role === 'user'" [class.msg-bot]="msg.role === 'bot'">
+
+        @if (msg.role === 'bot') {
+          <div class="msg-avatar-sm">🤖</div>
+        }
+
+        <div class="bubble" [class.bubble-bot]="msg.role === 'bot'" [class.bubble-user]="msg.role === 'user'">
+          <div class="bubble-text">{{ msg.text }}</div>
+          <div class="bubble-time">{{ msg.time }}</div>
+        </div>
+
+        @if (msg.role === 'user') {
+          <div class="msg-avatar-sm user-avatar">
+            {{ currentUser?.full_name?.charAt(0) || currentUser?.username?.charAt(0) || 'U' }}
+          </div>
+        }
+
+      </div>
+    }
+
+    <!-- Typing indicator -->
+    @if (isTyping) {
+      <div class="msg-row msg-bot">
+        <div class="msg-avatar-sm">🤖</div>
+        <div class="bubble bubble-bot typing-bubble">
+          <span class="typing-dot"></span>
+          <span class="typing-dot"></span>
+          <span class="typing-dot"></span>
+        </div>
+      </div>
+    }
+
+  </div>
+
+  <!-- ── Sugerencias rápidas ── -->
+  @if (messages.length <= 2 && !isTyping) {
+    <div class="suggestions-bar">
+      <div class="suggestions-label">Preguntas frecuentes</div>
+      <div class="suggestions-scroll">
+        @for (s of suggestions; track s) {
+          <button class="suggestion-chip" (click)="sendSuggestion(s)">{{ s }}</button>
+        }
+      </div>
+    </div>
+  }
+
+  <!-- ── Input ── -->
+  <div class="chat-input-bar">
+    <div class="input-wrap">
+      <textarea
+        class="chat-input"
+        [(ngModel)]="userInput"
+        placeholder="Escribe tu pregunta aquí..."
+        rows="1"
+        (keydown.enter)="$event.preventDefault(); sendMessage()"
+        [disabled]="isTyping"
+      ></textarea>
+      <button
+        class="send-btn"
+        (click)="sendMessage()"
+        [disabled]="!userInput.trim() || isTyping"
+        title="Enviar">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13"></line>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+        </svg>
+      </button>
+    </div>
+    <div class="input-hint">Presiona <kbd>Enter</kbd> para enviar · Asistente con IA</div>
+  </div>
+
+</div>

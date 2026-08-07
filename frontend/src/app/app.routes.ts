@@ -11,6 +11,7 @@ import { VirtualTurns } from './pages/virtual-turns/virtual-turns';
 import { MyTurns } from './pages/my-turns/my-turns';
 import { ManageUsers } from './pages/manage-users/manage-users';
 import { RescheduleTurns } from './pages/reschedule-turns/reschedule-turns';
+import { Chatbot } from './pages/chatbot/chatbot';
 import { authGuard, roleGuard } from './guards/jwt.guard';
 
 export const routes: Routes = [
@@ -26,5 +27,6 @@ export const routes: Routes = [
   { path: 'manage-users', component: ManageUsers, canActivate: [authGuard, roleGuard], data: { roles: ['employee', 'admin'] } },
   { path: 'reschedule-turns', component: RescheduleTurns, canActivate: [authGuard, roleGuard], data: { roles: ['employee', 'admin'] } },
   { path: 'screen', component: Screen },
+  { path: 'chatbot', component: Chatbot, canActivate: [authGuard] },
   { path: '**', redirectTo: '/login' },
 ];
