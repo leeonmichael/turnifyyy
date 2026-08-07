@@ -53,7 +53,7 @@ export class MyTurns implements OnInit, OnDestroy {
     });
   }
 
-  cancelTurn(turnId: number): void {
+  cancelTurn(turnId: string): void {
     this.http.delete(`/api/cancel-turn-by-id/${turnId}/`, { headers: this.getHeaders() }).subscribe({
       next: () => this.loadMyTurns(),
       error: () => alert('Error al cancelar el turno')

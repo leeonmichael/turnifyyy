@@ -39,9 +39,9 @@ urlpatterns=[
     path('my-turns/', views.my_turns, name='my_turns'),
     path('my-active-turn/', views.get_my_active_turn, name='get_my_active_turn'),
     path('cancel-turn/<str:turn_number>/', views.cancel_turn, name='cancel_turn'),
-    path('cancel-turn-by-id/<int:turn_id>/', views.cancel_turn_by_id, name='cancel_turn_by_id'),
+    path('cancel-turn-by-id/<str:turn_id>/', views.cancel_turn_by_id, name='cancel_turn_by_id'),
     path('sedes/', views.get_sedes, name='get_sedes'),
     path('sedes/create/', views.create_sede, name='create_sede'),
-    path('sedes/update/<int:sede_id>/', views.update_sede, name='update_sede'),
-    path('sedes/delete/<int:sede_id>/', views.delete_sede, name='delete_sede'),
+    path('sedes/update/<str:sede_id>/', views.update_sede, name='update_sede'),
+    path('sedes/delete/<str:sede_id>/', views.delete_sede, name='delete_sede'),
 ]

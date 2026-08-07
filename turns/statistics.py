@@ -1,53 +1,59 @@
-"""
-Turn statistics and analytics module
-Author: Nicolas Ruiz
-"""
-from django.db.models import Count, Avg
-from .models import Turn
-from datetime import date
+from datetime import date, timedelta
+
 
 def get_turn_statistics():
-    """Calculate statistics for turn management"""
-    from django.utils import timezone
-    today = date.today()
-    
-    total_turns = Turn.objects.count()
-    waiting_turns = Turn.objects.filter(status='waiting').count()
-    calling_turns = Turn.objects.filter(status='called').count()
-    completed = Turn.objects.filter(status='finished').count()
-    
-    service_stats = {
-        'general': Turn.objects.filter(service_type='general', created_at__date=today).count(),
-        'preferential': Turn.objects.filter(service_type='preferential', created_at__date=today).count(),
-        'emergency': Turn.objects.filter(service_type='emergency', created_at__date=today).count(),
-        'vip': Turn.objects.filter(service_type='vip', created_at__date=today).count()
-    }
-    
+    from .firebase_config import db
+    if not db:
+        return _empty_stats()
+
+    all_turns = []
+    for doc in db.collection('turns').stream():
+        t = doc.to_dict()
+        if t:
+            all_turns.append(t)
+
+    today_str = date.today().isoformat()
+    today_turns = [t for t in all_turns if t.get('created_at', '').startswith(today_str)]
+
+    service_types = ['general', 'preferential', 'emergency', 'vip']
+    service_stats = {st: sum(1 for t in today_turns if t.get('service_type') == st) for st in service_types}
+
     last_7_days = []
-    for i in range(7):
-        day = today - __import__('datetime').timedelta(days=i)
-        count = Turn.objects.filter(created_at__date=day).count()
-        last_7_days.append({
-            'date': day.strftime('%Y-%m-%d'),
-            'turns': count
-        })
-    last_7_days.reverse()
-    
+    for i in range(6, -1, -1):
+        day = date.today() - timedelta(days=i)
+        day_str = day.isoformat()
+        count = sum(1 for t in all_turns if t.get('created_at', '').startswith(day_str))
+        last_7_days.append({'date': day_str, 'turns': count})
+
     return {
-        'total': total_turns,
-        'waiting': waiting_turns,
-        'calling': calling_turns,
-        'today_turns': Turn.objects.filter(created_at__date=today).count(),
-        'completed': completed,
-        'service_stats': service_stats,
-        'last_7_days': last_7_days,
+        'total':          len(all_turns),
+        'waiting':        sum(1 for t in all_turns if t.get('status') == 'waiting'),
+        'calling':        sum(1 for t in all_turns if t.get('status') == 'called'),
+        'today_turns':    len(today_turns),
+        'completed':      sum(1 for t in all_turns if t.get('status') == 'finished'),
+        'service_stats':  service_stats,
+        'last_7_days':    last_7_days,
         'average_wait_time': 0
     }
 
+
+def _empty_stats():
+    return {'total': 0, 'waiting': 0, 'calling': 0, 'today_turns': 0, 'completed': 0,
+            'service_stats': {}, 'last_7_days': [], 'average_wait_time': 0}
+
+
 def calculate_average_wait_time():
-    """Calculate average wait time for completed turns"""
     return 0
 
+
 def get_service_type_distribution():
-    """Get distribution of turns by service type"""
-    return Turn.objects.values('service_type').annotate(count=Count('id'))
+    from .firebase_config import db
+    from collections import Counter
+    if not db:
+        return []
+    counter = Counter()
+    for doc in db.collection('turns').stream():
+        t = doc.to_dict()
+        if t:
+            counter[t.get('service_type', 'general')] += 1
+    return [{'service_type': k, 'count': v} for k, v in counter.items()]

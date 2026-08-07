@@ -4,10 +4,6 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
-from django.db.models import Count, Avg, F, ExpressionWrapper, DurationField, Sum
-from django.db.models.functions import ExtractHour
-from .models import Turn, Register, Sede, Sede
-from .utils import generate_turn, get_turn_prefix
 from .firebase_config import db
 from .jwt_utils import create_access_token, decode_access_token, get_token_from_request
 from .auth_decorators import jwt_required, role_required
@@ -18,35 +14,19 @@ import io
 import re
 from django.http import HttpResponse
 from django.utils import timezone
-from datetime import timedelta, date
-import pandas as pd
+from datetime import date, datetime
 from django.contrib.auth.hashers import make_password, check_password
-import json
+from collections import Counter
 
 
-def home(request):
-    return render(request, "index.html")
+# ─── Page views ──────────────────────────────────────────────────────────────
 
-
-def employee(request):
-    return render(request, "index.html")
-
-
-def screen(request):
-    return render(request, "index.html")
-
-
-def dashboard(request):
-    return render(request, "index.html")
-
-
-def register_page(request):
-    return render(request, "index.html")
-
-
-def login_page(request):
-    return render(request, "index.html")
-
+def home(request):         return render(request, "index.html")
+def employee(request):     return render(request, "index.html")
+def screen(request):       return render(request, "index.html")
+def dashboard(request):    return render(request, "index.html")
+def register_page(request):return render(request, "index.html")
+def login_page(request):   return render(request, "index.html")
 
 def logout_page(request):
     response = redirect('/login/')
@@ -54,125 +34,227 @@ def logout_page(request):
     return response
 
 
+# ─── Helpers ─────────────────────────────────────────────────────────────────
+
 def validate_email(email: str) -> bool:
-    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    return re.match(pattern, email) is not None
+    return bool(re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email))
 
 
-def validate_numeric(value: str, min_length: int) -> tuple[bool, str]:
+def validate_numeric(value: str, min_length: int):
     if not value.isdigit():
-        return False, f"Debe contener solo números"
+        return False, "Debe contener solo números"
     if len(value) < min_length:
         return False, f"Debe tener mínimo {min_length} dígitos"
     return True, ""
 
 
+def get_turn_prefix(service_type: str) -> str:
+    return {'general': 'A', 'preferential': 'B', 'emergency': 'E', 'vip': 'V', 'virtual': 'W'}.get(service_type, 'A')
+
+
+def _fmt_time(iso_str: str) -> str:
+    if not iso_str:
+        return ''
+    try:
+        return datetime.fromisoformat(str(iso_str)).strftime('%H:%M')
+    except Exception:
+        return str(iso_str)[:5]
+
+
+def _fmt_datetime(iso_str: str) -> str:
+    if not iso_str:
+        return ''
+    try:
+        return datetime.fromisoformat(str(iso_str)).strftime('%d/%m/%Y %H:%M')
+    except Exception:
+        return str(iso_str)
+
+
+def _fs_all_turns():
+    """Fetch all turns from Firestore as list of dicts (with _doc_id)."""
+    if not db:
+        return []
+    result = []
+    for doc in db.collection('turns').stream():
+        d = doc.to_dict()
+        if d:
+            d['_doc_id'] = doc.id
+            result.append(d)
+    return result
+
+
+def _fs_all_users():
+    """Fetch all users from Firestore as list of dicts."""
+    if not db:
+        return []
+    result = []
+    for doc in db.collection('users').stream():
+        d = doc.to_dict()
+        if d:
+            result.append(d)
+    return result
+
+
+def _fs_get_user(username: str):
+    """Get a single user document by username."""
+    if not db or not username:
+        return None
+    doc = db.collection('users').document(username).get()
+    return doc.to_dict() if doc.exists else None
+
+
+def _get_employee_sede(username: str, role: str) -> str:
+    if role == 'employee' and username:
+        u = _fs_get_user(username)
+        return (u or {}).get('sede', '')
+    return ''
+
+
+def generate_turn_fb(prefix: str, sede: str) -> str:
+    """Generate next turn number for a given prefix and sede."""
+    if not db:
+        return f"{prefix}1"
+    try:
+        docs = db.collection('turns').where('sede', '==', sede).stream() if sede else db.collection('turns').stream()
+        pl = len(prefix)
+        nums = [
+            int(t[pl:])
+            for doc in docs
+            for t in [doc.to_dict().get('number', '') if doc.to_dict() else '']
+            if t.startswith(prefix) and len(t) > pl and t[pl:].isdigit()
+        ]
+        return f"{prefix}{max(nums) + 1}" if nums else f"{prefix}1"
+    except Exception:
+        return f"{prefix}1"
+
+
+def broadcast_turn_update():
+    """Read all turns from Firestore and push via WebSocket to all clients."""
+    if not db:
+        return
+    try:
+        turns_data = []
+        for doc in db.collection('turns').stream():
+            t = doc.to_dict()
+            if not t:
+                continue
+            turns_data.append({
+                'id':           doc.id,
+                'number':       t.get('number', ''),
+                'status':       t.get('status', 'waiting'),
+                'service_type': t.get('service_type', 'general'),
+                'sede':         t.get('sede', ''),
+                'created_at':   _fmt_time(t.get('created_at', '')),
+                'called_by':    t.get('called_by', ''),
+                'created_by':   t.get('created_by', ''),
+                'scheduled_for':_fmt_datetime(t.get('scheduled_for', ''))
+            })
+        turns_data.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            async_to_sync(channel_layer.group_send)(
+                'turns',
+                {'type': 'turn_update', 'data': turns_data}
+            )
+    except Exception:
+        pass
+
+
+# ─── Auth ────────────────────────────────────────────────────────────────────
+
 @csrf_exempt
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def register_user(request):
-    username = request.data.get('username', '').strip()
-    password = request.data.get('password', '').strip()
+    username         = request.data.get('username', '').strip()
+    password         = request.data.get('password', '').strip()
     confirm_password = request.data.get('confirm_password', '').strip()
-    full_name = request.data.get('full_name', '').strip()
-    document_type = request.data.get('document_type', 'CC').strip()
-    cedula = request.data.get('cedula', '').strip()
-    email = request.data.get('email', '').strip()
-    phone = request.data.get('phone', '').strip()
-    accept_terms = request.data.get('accept_terms', False)
+    full_name        = request.data.get('full_name', '').strip()
+    document_type    = request.data.get('document_type', 'CC').strip()
+    cedula           = request.data.get('cedula', '').strip()
+    email            = request.data.get('email', '').strip()
+    phone            = request.data.get('phone', '').strip()
+    accept_terms     = request.data.get('accept_terms', False)
+
+    if not db:
+        return Response({'success': False, 'message': 'Servicio no disponible'}, status=503)
 
     if not username:
-        return Response({'success': False, 'field': 'username', 'message': 'El nombre de usuario es requerido'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'success': False, 'field': 'username', 'message': 'El nombre de usuario es requerido'}, status=400)
     if len(username) < 3:
-        return Response({'success': False, 'field': 'username', 'message': 'El usuario debe tener mínimo 3 caracteres'}, status=status.HTTP_400_BAD_REQUEST)
-    if Register.objects.filter(username=username).exists():
-        return Response({'success': False, 'field': 'username', 'message': 'El nombre de usuario ya está registrado'}, status=status.HTTP_409_CONFLICT)
+        return Response({'success': False, 'field': 'username', 'message': 'El usuario debe tener mínimo 3 caracteres'}, status=400)
+    if _fs_get_user(username):
+        return Response({'success': False, 'field': 'username', 'message': 'El nombre de usuario ya está registrado'}, status=409)
 
     if not password:
-        return Response({'success': False, 'field': 'password', 'message': 'La contraseña es requerida'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'success': False, 'field': 'password', 'message': 'La contraseña es requerida'}, status=400)
     if len(password) < 4:
-        return Response({'success': False, 'field': 'password', 'message': 'La contraseña debe tener mínimo 4 caracteres'}, status=status.HTTP_400_BAD_REQUEST)
-
+        return Response({'success': False, 'field': 'password', 'message': 'La contraseña debe tener mínimo 4 caracteres'}, status=400)
     if not confirm_password:
-        return Response({'success': False, 'field': 'confirm_password', 'message': 'Confirme su contraseña'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'success': False, 'field': 'confirm_password', 'message': 'Confirme su contraseña'}, status=400)
     if password != confirm_password:
-        return Response({'success': False, 'field': 'confirm_password', 'message': 'Las contraseñas no coinciden'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'success': False, 'field': 'confirm_password', 'message': 'Las contraseñas no coinciden'}, status=400)
 
     if not full_name:
-        return Response({'success': False, 'field': 'full_name', 'message': 'El nombre completo es requerido'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'success': False, 'field': 'full_name', 'message': 'El nombre completo es requerido'}, status=400)
 
     if not cedula:
-        return Response({'success': False, 'field': 'cedula', 'message': 'El número de documento es requerido'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'success': False, 'field': 'cedula', 'message': 'El número de documento es requerido'}, status=400)
     valid, msg = validate_numeric(cedula, 10)
     if not valid:
-        return Response({'success': False, 'field': 'cedula', 'message': msg}, status=status.HTTP_400_BAD_REQUEST)
-    if Register.objects.filter(cedula=cedula).exists():
-        return Response({'success': False, 'field': 'cedula', 'message': 'Este documento ya está registrado'}, status=status.HTTP_409_CONFLICT)
+        return Response({'success': False, 'field': 'cedula', 'message': msg}, status=400)
+    if any(u.get('cedula') == cedula for u in _fs_all_users()):
+        return Response({'success': False, 'field': 'cedula', 'message': 'Este documento ya está registrado'}, status=409)
 
     if not email:
-        return Response({'success': False, 'field': 'email', 'message': 'El correo electrónico es requerido'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'success': False, 'field': 'email', 'message': 'El correo electrónico es requerido'}, status=400)
     if not validate_email(email):
-        return Response({'success': False, 'field': 'email', 'message': 'Ingrese un correo electrónico válido'}, status=status.HTTP_400_BAD_REQUEST)
-    if Register.objects.filter(email=email).exists():
-        return Response({'success': False, 'field': 'email', 'message': 'Este correo ya está registrado'}, status=status.HTTP_409_CONFLICT)
+        return Response({'success': False, 'field': 'email', 'message': 'Ingrese un correo electrónico válido'}, status=400)
+    if any(u.get('email') == email for u in _fs_all_users()):
+        return Response({'success': False, 'field': 'email', 'message': 'Este correo ya está registrado'}, status=409)
 
     if not phone:
-        return Response({'success': False, 'field': 'phone', 'message': 'El teléfono es requerido'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'success': False, 'field': 'phone', 'message': 'El teléfono es requerido'}, status=400)
     valid, msg = validate_numeric(phone, 10)
     if not valid:
-        return Response({'success': False, 'field': 'phone', 'message': msg}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'success': False, 'field': 'phone', 'message': msg}, status=400)
 
     if not accept_terms:
-        return Response({'success': False, 'field': 'accept_terms', 'message': 'Debe aceptar términos y condiciones'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'success': False, 'field': 'accept_terms', 'message': 'Debe aceptar términos y condiciones'}, status=400)
 
-    hashed_password = make_password(password)
-    user = Register.objects.create(
-        username=username,
-        password=hashed_password,
-        full_name=full_name,
-        document_type=document_type,
-        cedula=cedula,
-        email=email,
-        phone=phone,
-        role='client'
-    )
-
-    if db:
-        try:
-            db.collection("users").document(username).set({
-                'username': username,
-                'full_name': full_name,
-                'cedula': cedula,
-                'email': email,
-                'phone': phone,
-                'role': 'client',
-                'is_active': True,
-                'created_at': timezone.now().isoformat(),
-                'updated_at': timezone.now().isoformat()
-            })
-        except Exception:
-            pass
+    now_iso = timezone.now().isoformat()
+    user_doc = {
+        'username':      username,
+        'password':      make_password(password),
+        'full_name':     full_name,
+        'document_type': document_type,
+        'cedula':        cedula,
+        'email':         email,
+        'phone':         phone,
+        'cargo':         '',
+        'entidad':       '',
+        'sede':          '',
+        'role':          'client',
+        'is_active':     True,
+        'created_at':    now_iso,
+        'updated_at':    now_iso,
+    }
+    db.collection('users').document(username).set(user_doc)
 
     token = create_access_token({
-        'username': user.username,
-        'role': user.role,
-        'cedula': user.cedula,
-        'email': user.email,
-        'full_name': user.full_name
+        'username':  username,
+        'role':      'client',
+        'cedula':    cedula,
+        'email':     email,
+        'full_name': full_name
     })
 
     return Response({
         'success': True,
         'message': 'Usuario registrado correctamente',
-        'token': token,
-        'user': {
-            'username': user.username,
-            'role': user.role,
-            'cedula': user.cedula,
-            'email': user.email,
-            'full_name': user.full_name
-        }
-    })
+        'token':   token,
+        'user':    {'username': username, 'role': 'client', 'cedula': cedula, 'email': email, 'full_name': full_name}
+    }, status=201)
 
 
 @csrf_exempt
@@ -180,62 +262,58 @@ def register_user(request):
 @permission_classes([AllowAny])
 def login_user(request):
     identifier = request.data.get('username', '').strip()
-    password = request.data.get('password', '').strip()
+    password   = request.data.get('password', '').strip()
 
     if not identifier:
-        return Response({'success': False, 'field': 'username', 'message': 'Ingrese usuario o correo electrónico'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'success': False, 'field': 'username', 'message': 'Ingrese usuario o correo electrónico'}, status=400)
     if not password:
-        return Response({'success': False, 'field': 'password', 'message': 'Ingrese su contraseña'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'success': False, 'field': 'password', 'message': 'Ingrese su contraseña'}, status=400)
+    if not db:
+        return Response({'success': False, 'message': 'Servicio no disponible'}, status=503)
 
-    register = Register.objects.filter(username=identifier).first()
-    if not register:
-        register = Register.objects.filter(email=identifier).first()
-    if not register:
-        return Response({'success': False, 'field': 'username', 'message': 'Credenciales inválidas'}, status=status.HTTP_401_UNAUTHORIZED)
+    user_doc = _fs_get_user(identifier)
+    if not user_doc:
+        all_users = _fs_all_users()
+        matches = [u for u in all_users if u.get('email') == identifier]
+        user_doc = matches[0] if matches else None
 
-    if not check_password(password, register.password):
-        return Response({'success': False, 'field': 'password', 'message': 'Credenciales inválidas'}, status=status.HTTP_401_UNAUTHORIZED)
+    if not user_doc:
+        return Response({'success': False, 'field': 'username', 'message': 'Credenciales inválidas'}, status=401)
+    if not check_password(password, user_doc.get('password', '')):
+        return Response({'success': False, 'field': 'password', 'message': 'Credenciales inválidas'}, status=401)
+    if not user_doc.get('is_active', True):
+        return Response({'success': False, 'field': 'username', 'message': 'Cuenta desactivada. Contacte al administrador'}, status=401)
 
-    if not register.is_active:
-        return Response({'success': False, 'field': 'username', 'message': 'Cuenta desactivada. Contacte al administrador'}, status=status.HTTP_401_UNAUTHORIZED)
+    username = user_doc.get('username', identifier)
+    role     = user_doc.get('role', 'client')
 
     token = create_access_token({
-        'username': register.username,
-        'role': register.role,
-        'cedula': register.cedula,
-        'email': register.email,
-        'full_name': register.full_name
+        'username':  username,
+        'role':      role,
+        'cedula':    user_doc.get('cedula', ''),
+        'email':     user_doc.get('email', ''),
+        'full_name': user_doc.get('full_name', '')
     })
 
-    if db:
-        try:
-            db.collection("users").document(register.username).update({
-                'last_login': timezone.now().isoformat(),
-                'role': register.role
-            })
-        except Exception:
-            pass
+    try:
+        db.collection('users').document(username).update({'last_login': timezone.now().isoformat()})
+    except Exception:
+        pass
 
-    if register.role == 'client':
-        redirect_url = '/home/'
-    elif register.role == 'admin':
-        redirect_url = '/dashboard/'
-    else:
-        redirect_url = '/employee/'
-
+    redirect_map = {'client': '/home/', 'admin': '/dashboard/'}
     return Response({
-        'success': True,
-        'token': token,
-        'redirect_url': redirect_url,
+        'success':      True,
+        'token':        token,
+        'redirect_url': redirect_map.get(role, '/employee/'),
         'user': {
-            'username': register.username,
-            'role': register.role,
-            'cedula': register.cedula,
-            'email': register.email,
-            'full_name': register.full_name,
-            'sede': register.sede,
-            'phone': register.phone,
-            'cargo': register.cargo
+            'username':  username,
+            'role':      role,
+            'cedula':    user_doc.get('cedula', ''),
+            'email':     user_doc.get('email', ''),
+            'full_name': user_doc.get('full_name', ''),
+            'sede':      user_doc.get('sede', ''),
+            'phone':     user_doc.get('phone', ''),
+            'cargo':     user_doc.get('cargo', '')
         }
     })
 
@@ -257,100 +335,108 @@ def verify_session(request):
     payload = decode_access_token(token)
     if not payload:
         return Response({'authenticated': False, 'role': None})
-    
+
+    username  = payload.get('username')
     user_data = None
-    username = payload.get('username')
     if username:
-        register = Register.objects.filter(username=username).first()
-        if register:
+        u = _fs_get_user(username)
+        if u:
             user_data = {
-                'username': register.username,
-                'full_name': register.full_name,
-                'email': register.email,
-                'phone': register.phone,
-                'cedula': register.cedula,
-                'role': register.role
+                'username':  u.get('username'),
+                'full_name': u.get('full_name'),
+                'email':     u.get('email'),
+                'phone':     u.get('phone'),
+                'cedula':    u.get('cedula'),
+                'role':      u.get('role'),
             }
-    
+
     return Response({
         'authenticated': True,
-        'role': payload.get('role'),
-        'username': payload.get('username'),
-        'user': user_data
+        'role':          payload.get('role'),
+        'username':      payload.get('username'),
+        'user':          user_data
     })
 
 
 @csrf_exempt
 @api_view(['PUT'])
 def update_profile(request):
-    token = get_token_from_request(request)
-    payload = decode_access_token(token) if token else None
+    token    = get_token_from_request(request)
+    payload  = decode_access_token(token) if token else None
     username = payload.get('username', '') if payload else ''
-    
+
     if not username:
         return Response({'success': False, 'message': 'No autenticado'}, status=401)
-    
-    user = Register.objects.filter(username=username).first()
-    if not user:
+
+    u = _fs_get_user(username)
+    if not u:
         return Response({'success': False, 'message': 'Usuario no encontrado'}, status=404)
-    
-    user.full_name = request.data.get('full_name', user.full_name).strip()
-    user.email = request.data.get('email', user.email).strip()
-    user.phone = request.data.get('phone', user.phone).strip()
-    
+
+    full_name = request.data.get('full_name', u.get('full_name', '')).strip()
+    email     = request.data.get('email',     u.get('email',     '')).strip()
+    phone     = request.data.get('phone',     u.get('phone',     '')).strip()
+
+    updates = {'full_name': full_name, 'email': email, 'phone': phone, 'updated_at': timezone.now().isoformat()}
+
     if 'password' in request.data and request.data['password']:
-        password = request.data['password'].strip()
-        if len(password) < 4:
+        pw = request.data['password'].strip()
+        if len(pw) < 4:
             return Response({'success': False, 'field': 'password', 'message': 'La contraseña debe tener mínimo 4 caracteres'}, status=400)
-        user.password = make_password(password)
-    
-    if user.email and not validate_email(user.email):
+        updates['password'] = make_password(pw)
+
+    if email and not validate_email(email):
         return Response({'success': False, 'field': 'email', 'message': 'Ingrese un correo electrónico válido'}, status=400)
-    if user.email and Register.objects.filter(email=user.email).exclude(username=username).exists():
-        return Response({'success': False, 'field': 'email', 'message': 'Este correo ya está registrado'}, status=409)
-    
-    user.save()
-    
+    if email:
+        dup = [usr for usr in _fs_all_users() if usr.get('email') == email and usr.get('username') != username]
+        if dup:
+            return Response({'success': False, 'field': 'email', 'message': 'Este correo ya está registrado'}, status=409)
+
+    db.collection('users').document(username).update(updates)
+
     return Response({
         'success': True,
         'message': 'Perfil actualizado correctamente',
         'user': {
-            'username': user.username,
-            'full_name': user.full_name,
-            'email': user.email,
-            'phone': user.phone,
-            'cedula': user.cedula,
-            'role': user.role
+            'username':  username,
+            'full_name': full_name,
+            'email':     email,
+            'phone':     phone,
+            'cedula':    u.get('cedula', ''),
+            'role':      u.get('role', '')
         }
     })
 
+
+# ─── User Management ─────────────────────────────────────────────────────────
 
 @csrf_exempt
 @api_view(['GET'])
 @jwt_required
 @role_required('admin', 'employee')
 def get_users(request):
-    token = get_token_from_request(request)
-    payload = decode_access_token(token) if token else None
-    calling_role = (payload.get('role') or '') if payload else ''
-    if calling_role == 'employee':
-        users = Register.objects.filter(role='client').order_by('-created_at')
-    else:
-        users = Register.objects.all().order_by('-created_at')
+    token    = get_token_from_request(request)
+    payload  = decode_access_token(token) if token else None
+    c_role   = (payload.get('role') or '') if payload else ''
+
+    all_users = _fs_all_users()
+    if c_role == 'employee':
+        all_users = [u for u in all_users if u.get('role') == 'client']
+    all_users.sort(key=lambda u: u.get('created_at', ''), reverse=True)
+
     data = [{
-        'username': u.username,
-        'role': u.role,
-        'full_name': u.full_name or u.username,
-        'email': u.email,
-        'phone': u.phone,
-        'cedula': u.cedula,
-        'document_type': u.document_type,
-        'cargo': u.cargo,
-        'entidad': u.entidad,
-        'sede': u.sede,
-        'is_active': u.is_active,
-        'created_at': u.created_at.strftime('%Y-%m-%d %H:%M:%S')
-    } for u in users]
+        'username':      u.get('username', ''),
+        'role':          u.get('role', ''),
+        'full_name':     u.get('full_name') or u.get('username', ''),
+        'email':         u.get('email', ''),
+        'phone':         u.get('phone', ''),
+        'cedula':        u.get('cedula', ''),
+        'document_type': u.get('document_type', ''),
+        'cargo':         u.get('cargo', ''),
+        'entidad':       u.get('entidad', ''),
+        'sede':          u.get('sede', ''),
+        'is_active':     u.get('is_active', True),
+        'created_at':    u.get('created_at', '')
+    } for u in all_users]
     return Response({'users': data})
 
 
@@ -359,26 +445,18 @@ def get_users(request):
 @jwt_required
 @role_required('admin', 'employee')
 def delete_user(request, username):
-    token = get_token_from_request(request)
+    token   = get_token_from_request(request)
     payload = decode_access_token(token) if token else None
-    calling_role = (payload.get('role') or '') if payload else ''
+    c_role  = (payload.get('role') or '') if payload else ''
 
-    register = Register.objects.filter(username=username).first()
-    if not register:
-        return Response({'success': False, 'message': 'Usuario no encontrado'}, status=status.HTTP_404_NOT_FOUND)
-    if calling_role == 'employee' and register.role != 'client':
-        return Response({'success': False, 'message': 'Solo puedes eliminar clientes'}, status=status.HTTP_403_FORBIDDEN)
+    u = _fs_get_user(username)
+    if not u:
+        return Response({'success': False, 'message': 'Usuario no encontrado'}, status=404)
+    if c_role == 'employee' and u.get('role') != 'client':
+        return Response({'success': False, 'message': 'Solo puedes eliminar clientes'}, status=403)
 
-    username_to_delete = register.username
-    register.delete()
-
-    if db:
-        try:
-            db.collection("users").document(username_to_delete).delete()
-        except Exception:
-            pass
-
-    return Response({'success': True, 'message': f'Usuario {username_to_delete} eliminado correctamente'})
+    db.collection('users').document(username).delete()
+    return Response({'success': True, 'message': f'Usuario {username} eliminado correctamente'})
 
 
 @csrf_exempt
@@ -386,102 +464,83 @@ def delete_user(request, username):
 @jwt_required
 @role_required('admin')
 def create_employee(request):
-    username = request.data.get('username', '').strip()
-    password = request.data.get('password', '').strip()
-    full_name = request.data.get('full_name', '').strip()
+    username      = request.data.get('username', '').strip()
+    password      = request.data.get('password', '').strip()
+    full_name     = request.data.get('full_name', '').strip()
     document_type = request.data.get('document_type', 'CC').strip()
-    cedula = request.data.get('cedula', '').strip()
-    email = request.data.get('email', '').strip()
-    phone = request.data.get('phone', '').strip()
-    cargo = 'Empleado'
-    entidad = 'EPS'
-    sede = request.data.get('sede', '').strip()
+    cedula        = request.data.get('cedula', '').strip()
+    email         = request.data.get('email', '').strip()
+    phone         = request.data.get('phone', '').strip()
+    sede          = request.data.get('sede', '').strip()
 
     if not username:
-        return Response({'success': False, 'field': 'username', 'message': 'El nombre de usuario es requerido'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'success': False, 'field': 'username', 'message': 'El nombre de usuario es requerido'}, status=400)
     if len(username) < 3:
-        return Response({'success': False, 'field': 'username', 'message': 'El usuario debe tener mínimo 3 caracteres'}, status=status.HTTP_409_CONFLICT)
-    if Register.objects.filter(username=username).exists():
-        return Response({'success': False, 'field': 'username', 'message': 'El nombre de usuario ya está registrado'}, status=status.HTTP_409_CONFLICT)
-
+        return Response({'success': False, 'field': 'username', 'message': 'El usuario debe tener mínimo 3 caracteres'}, status=409)
+    if _fs_get_user(username):
+        return Response({'success': False, 'field': 'username', 'message': 'El nombre de usuario ya está registrado'}, status=409)
     if not password:
-        return Response({'success': False, 'field': 'password', 'message': 'La contraseña es requerida'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'success': False, 'field': 'password', 'message': 'La contraseña es requerida'}, status=400)
     if len(password) < 4:
-        return Response({'success': False, 'field': 'password', 'message': 'La contraseña debe tener mínimo 4 caracteres'}, status=status.HTTP_400_BAD_REQUEST)
-
+        return Response({'success': False, 'field': 'password', 'message': 'La contraseña debe tener mínimo 4 caracteres'}, status=400)
     if not full_name:
-        return Response({'success': False, 'field': 'full_name', 'message': 'El nombre completo es requerido'}, status=status.HTTP_400_BAD_REQUEST)
-
+        return Response({'success': False, 'field': 'full_name', 'message': 'El nombre completo es requerido'}, status=400)
     if document_type not in ['CC', 'CE', 'PA', 'NIT', 'PPT']:
-        return Response({'success': False, 'field': 'document_type', 'message': 'Tipo de documento no válido'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'success': False, 'field': 'document_type', 'message': 'Tipo de documento no válido'}, status=400)
+
+    all_users = _fs_all_users()
 
     if cedula:
         valid, msg = validate_numeric(cedula, 10)
         if not valid:
-            return Response({'success': False, 'field': 'cedula', 'message': msg}, status=status.HTTP_400_BAD_REQUEST)
-        if Register.objects.filter(cedula=cedula).exclude(username=username).exists():
-            return Response({'success': False, 'field': 'cedula', 'message': 'Este documento ya está registrado'}, status=status.HTTP_409_CONFLICT)
+            return Response({'success': False, 'field': 'cedula', 'message': msg}, status=400)
+        if any(u.get('cedula') == cedula for u in all_users if u.get('username') != username):
+            return Response({'success': False, 'field': 'cedula', 'message': 'Este documento ya está registrado'}, status=409)
 
     if email:
         if not validate_email(email):
-            return Response({'success': False, 'field': 'email', 'message': 'Ingrese un correo electrónico válido'}, status=status.HTTP_400_BAD_REQUEST)
-        if Register.objects.filter(email=email).exclude(username=username).exists():
-            return Response({'success': False, 'field': 'email', 'message': 'Este correo ya está registrado'}, status=status.HTTP_409_CONFLICT)
+            return Response({'success': False, 'field': 'email', 'message': 'Ingrese un correo electrónico válido'}, status=400)
+        if any(u.get('email') == email for u in all_users if u.get('username') != username):
+            return Response({'success': False, 'field': 'email', 'message': 'Este correo ya está registrado'}, status=409)
 
     if phone:
         valid, msg = validate_numeric(phone, 10)
         if not valid:
-            return Response({'success': False, 'field': 'phone', 'message': msg}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'success': False, 'field': 'phone', 'message': msg}, status=400)
 
-    hashed_password = make_password(password)
-    user = Register.objects.create(
-        username=username,
-        password=hashed_password,
-        full_name=full_name,
-        document_type=document_type,
-        cedula=cedula,
-        email=email,
-        phone=phone,
-        cargo=cargo,
-        entidad=entidad,
-        sede=sede,
-        role='employee',
-        is_active=True
-    )
-
-    if db:
-        try:
-            db.collection("users").document(username).set({
-                'username': username,
-                'full_name': full_name,
-                'cedula': cedula,
-                'email': email,
-                'phone': phone,
-                'cargo': cargo,
-                'entidad': entidad,
-                'sede': sede,
-                'role': 'employee',
-                'created_at': timezone.now().isoformat(),
-                'updated_at': timezone.now().isoformat()
-            })
-        except Exception:
-            pass
+    now_iso = timezone.now().isoformat()
+    db.collection('users').document(username).set({
+        'username':      username,
+        'password':      make_password(password),
+        'full_name':     full_name,
+        'document_type': document_type,
+        'cedula':        cedula,
+        'email':         email,
+        'phone':         phone,
+        'cargo':         'Empleado',
+        'entidad':       'EPS',
+        'sede':          sede,
+        'role':          'employee',
+        'is_active':     True,
+        'created_at':    now_iso,
+        'updated_at':    now_iso,
+    })
 
     return Response({
         'success': True,
         'message': 'Empleado creado correctamente',
         'user': {
-            'username': user.username,
-            'role': user.role,
-            'full_name': user.full_name,
-            'document_type': user.document_type,
-            'cedula': user.cedula,
-            'email': user.email,
-            'phone': user.phone,
-            'cargo': user.cargo,
-            'entidad': user.entidad,
-            'sede': user.sede,
-            'is_active': user.is_active
+            'username':      username,
+            'role':          'employee',
+            'full_name':     full_name,
+            'document_type': document_type,
+            'cedula':        cedula,
+            'email':         email,
+            'phone':         phone,
+            'cargo':         'Empleado',
+            'entidad':       'EPS',
+            'sede':          sede,
+            'is_active':     True
         }
     })
 
@@ -491,71 +550,67 @@ def create_employee(request):
 @jwt_required
 @role_required('admin')
 def update_employee(request, username):
-    employee = Register.objects.filter(username=username, role='employee').first()
-    if not employee:
-        return Response({'success': False, 'message': 'Empleado no encontrado'}, status=status.HTTP_404_NOT_FOUND)
+    emp = _fs_get_user(username)
+    if not emp or emp.get('role') != 'employee':
+        return Response({'success': False, 'message': 'Empleado no encontrado'}, status=404)
 
-    employee.full_name = request.data.get('full_name', employee.full_name).strip()
-    employee.document_type = request.data.get('document_type', employee.document_type).strip()
-    employee.cedula = request.data.get('cedula', employee.cedula).strip()
-    employee.email = request.data.get('email', employee.email).strip()
-    employee.phone = request.data.get('phone', employee.phone).strip()
-    employee.cargo = 'Empleado'
-    employee.entidad = 'EPS'
-    employee.sede = request.data.get('sede', employee.sede).strip()
+    full_name     = request.data.get('full_name',     emp.get('full_name', '')).strip()
+    document_type = request.data.get('document_type', emp.get('document_type', 'CC')).strip()
+    cedula        = request.data.get('cedula',        emp.get('cedula', '')).strip()
+    email         = request.data.get('email',         emp.get('email', '')).strip()
+    phone         = request.data.get('phone',         emp.get('phone', '')).strip()
+    sede          = request.data.get('sede',          emp.get('sede', '')).strip()
+
+    all_users = _fs_all_users()
+
+    if cedula:
+        if not cedula.isdigit():
+            return Response({'success': False, 'field': 'cedula', 'message': 'El documento debe contener solo números'}, status=400)
+        if len(cedula) < 10:
+            return Response({'success': False, 'field': 'cedula', 'message': 'El documento debe tener mínimo 10 dígitos'}, status=400)
+        if any(u.get('cedula') == cedula for u in all_users if u.get('username') != username):
+            return Response({'success': False, 'field': 'cedula', 'message': 'Este documento ya está registrado'}, status=409)
+
+    if email:
+        if not validate_email(email):
+            return Response({'success': False, 'field': 'email', 'message': 'Ingrese un correo electrónico válido'}, status=400)
+        if any(u.get('email') == email for u in all_users if u.get('username') != username):
+            return Response({'success': False, 'field': 'email', 'message': 'Este correo ya está registrado'}, status=409)
+
+    updates = {
+        'full_name':     full_name,
+        'document_type': document_type,
+        'cedula':        cedula,
+        'email':         email,
+        'phone':         phone,
+        'cargo':         'Empleado',
+        'entidad':       'EPS',
+        'sede':          sede,
+        'updated_at':    timezone.now().isoformat(),
+    }
 
     if 'password' in request.data and request.data['password']:
-        password = request.data['password'].strip()
-        if len(password) < 4:
-            return Response({'success': False, 'field': 'password', 'message': 'La contraseña debe tener mínimo 4 caracteres'}, status=status.HTTP_400_BAD_REQUEST)
-        employee.password = make_password(password)
+        pw = request.data['password'].strip()
+        if len(pw) < 4:
+            return Response({'success': False, 'field': 'password', 'message': 'La contraseña debe tener mínimo 4 caracteres'}, status=400)
+        updates['password'] = make_password(pw)
 
-    if employee.cedula and not employee.cedula.isdigit():
-        return Response({'success': False, 'field': 'cedula', 'message': 'El documento debe contener solo números'}, status=status.HTTP_400_BAD_REQUEST)
-    if employee.cedula and len(employee.cedula) < 10:
-        return Response({'success': False, 'field': 'cedula', 'message': 'El documento debe tener mínimo 10 dígitos'}, status=status.HTTP_400_BAD_REQUEST)
-    if employee.cedula and Register.objects.filter(cedula=employee.cedula).exclude(username=username).exists():
-        return Response({'success': False, 'field': 'cedula', 'message': 'Este documento ya está registrado'}, status=status.HTTP_409_CONFLICT)
-
-    if employee.email and not validate_email(employee.email):
-        return Response({'success': False, 'field': 'email', 'message': 'Ingrese un correo electrónico válido'}, status=status.HTTP_400_BAD_REQUEST)
-    if employee.email and Register.objects.filter(email=employee.email).exclude(username=username).exists():
-        return Response({'success': False, 'field': 'email', 'message': 'Este correo ya está registrado'}, status=status.HTTP_409_CONFLICT)
-
-    employee.save()
-
-    if db:
-        try:
-            db.collection("users").document(employee.username).update({
-                'full_name': employee.full_name,
-                'document_type': employee.document_type,
-                'cedula': employee.cedula,
-                'email': employee.email,
-                'phone': employee.phone,
-                'cargo': employee.cargo,
-                'entidad': employee.entidad,
-                'sede': employee.sede,
-                'role': employee.role,
-                'is_active': employee.is_active,
-                'updated_at': timezone.now().isoformat()
-            })
-        except Exception:
-            pass
+    db.collection('users').document(username).update(updates)
 
     return Response({
         'success': True,
         'message': 'Empleado actualizado correctamente',
         'user': {
-            'username': employee.username,
-            'full_name': employee.full_name,
-            'document_type': employee.document_type,
-            'cedula': employee.cedula,
-            'email': employee.email,
-            'phone': employee.phone,
-            'cargo': employee.cargo,
-            'entidad': employee.entidad,
-            'sede': employee.sede,
-            'is_active': employee.is_active
+            'username':      username,
+            'full_name':     full_name,
+            'document_type': document_type,
+            'cedula':        cedula,
+            'email':         email,
+            'phone':         phone,
+            'cargo':         'Empleado',
+            'entidad':       'EPS',
+            'sede':          sede,
+            'is_active':     emp.get('is_active', True)
         }
     })
 
@@ -565,23 +620,11 @@ def update_employee(request, username):
 @jwt_required
 @role_required('admin')
 def deactivate_employee(request, username):
-    employee = Register.objects.filter(username=username, role='employee').first()
-    if not employee:
-        return Response({'success': False, 'message': 'Empleado no encontrado'}, status=status.HTTP_404_NOT_FOUND)
-
-    employee.is_active = False
-    employee.save()
-
-    if db:
-        try:
-            db.collection("users").document(username).update({
-                'is_active': False,
-                'updated_at': timezone.now().isoformat()
-            })
-        except Exception:
-            pass
-
-    return Response({'success': True, 'message': f'Empleado {employee.username} desactivado correctamente'})
+    emp = _fs_get_user(username)
+    if not emp or emp.get('role') != 'employee':
+        return Response({'success': False, 'message': 'Empleado no encontrado'}, status=404)
+    db.collection('users').document(username).update({'is_active': False, 'updated_at': timezone.now().isoformat()})
+    return Response({'success': True, 'message': f'Empleado {username} desactivado correctamente'})
 
 
 @csrf_exempt
@@ -589,34 +632,20 @@ def deactivate_employee(request, username):
 @jwt_required
 @role_required('admin', 'employee')
 def toggle_user_active(request, username):
-    token = get_token_from_request(request)
+    token   = get_token_from_request(request)
     payload = decode_access_token(token) if token else None
-    calling_role = (payload.get('role') or '') if payload else ''
+    c_role  = (payload.get('role') or '') if payload else ''
 
-    user = Register.objects.filter(username=username).first()
-    if not user:
-        return Response({'success': False, 'message': 'Usuario no encontrado'}, status=status.HTTP_404_NOT_FOUND)
-    if calling_role == 'employee' and user.role != 'client':
-        return Response({'success': False, 'message': 'Solo puedes modificar clientes'}, status=status.HTTP_403_FORBIDDEN)
+    u = _fs_get_user(username)
+    if not u:
+        return Response({'success': False, 'message': 'Usuario no encontrado'}, status=404)
+    if c_role == 'employee' and u.get('role') != 'client':
+        return Response({'success': False, 'message': 'Sin permiso'}, status=403)
 
-    user.is_active = not user.is_active
-    user.save()
-
-    if db:
-        try:
-            db.collection("users").document(username).update({
-                'is_active': user.is_active,
-                'updated_at': timezone.now().isoformat()
-            })
-        except Exception:
-            pass
-
-    action = 'activado' if user.is_active else 'desactivado'
-    return Response({
-        'success': True,
-        'message': f'Usuario {username} {action} correctamente',
-        'is_active': user.is_active
-    })
+    new_active = not u.get('is_active', True)
+    db.collection('users').document(username).update({'is_active': new_active, 'updated_at': timezone.now().isoformat()})
+    state = 'activado' if new_active else 'desactivado'
+    return Response({'success': True, 'message': f'Usuario {username} {state} correctamente', 'is_active': new_active})
 
 
 @csrf_exempt
@@ -624,20 +653,20 @@ def toggle_user_active(request, username):
 @jwt_required
 @role_required('admin')
 def get_employees(request):
-    employees = Register.objects.filter(role='employee').order_by('-created_at')
+    all_users = _fs_all_users()
+    emps = sorted([u for u in all_users if u.get('role') == 'employee'], key=lambda u: u.get('created_at', ''))
     data = [{
-        'username': e.username,
-        'full_name': e.full_name or e.username,
-        'document_type': e.document_type,
-        'cedula': e.cedula,
-        'email': e.email,
-        'phone': e.phone,
-        'cargo': e.cargo,
-        'entidad': e.entidad,
-        'sede': e.sede,
-        'is_active': e.is_active,
-        'created_at': e.created_at.strftime('%Y-%m-%d %H:%M:%S') if e.created_at else ''
-    } for e in employees]
+        'username':      e.get('username', ''),
+        'full_name':     e.get('full_name', ''),
+        'email':         e.get('email', ''),
+        'phone':         e.get('phone', ''),
+        'cedula':        e.get('cedula', ''),
+        'document_type': e.get('document_type', ''),
+        'cargo':         e.get('cargo', ''),
+        'entidad':       e.get('entidad', ''),
+        'sede':          e.get('sede', ''),
+        'is_active':     e.get('is_active', True),
+    } for e in emps]
     return Response({'employees': data})
 
 
@@ -646,173 +675,150 @@ def get_employees(request):
 @jwt_required
 @role_required('admin')
 def get_admin_statistics(request):
-    today = date.today()
-    now = timezone.now()
-    
-    total_users = Register.objects.count()
-    total_clients = Register.objects.filter(role='client').count()
-    total_employees = Register.objects.filter(role='employee').count()
+    today_str = date.today().isoformat()
+    all_users = _fs_all_users()
+    all_turns = _fs_all_turns()
 
-    turns_today = Turn.objects.filter(created_at__date=today)
-    turns_active = Turn.objects.filter(status='called').count()
-    turns_attended = Turn.objects.filter(status='finished', created_at__date=today).count()
-    turns_cancelled = Turn.objects.filter(status='cancelled', created_at__date=today).count()
-    
-    total_turns = Turn.objects.count()
-    waiting_turns = Turn.objects.filter(status='waiting').count()
+    today_turns  = [t for t in all_turns if t.get('created_at', '').startswith(today_str)]
+    service_types = ['general', 'preferential', 'emergency', 'vip', 'virtual']
 
-    turns_presenciales = turns_today.exclude(service_type='virtual').count()
-    turns_virtuales = turns_today.filter(service_type='virtual').count()
+    # Avg attention time (Python-side)
+    finished = [
+        t for t in all_turns
+        if t.get('status') == 'finished' and t.get('created_at') and t.get('finished_at')
+    ]
+    avg_mins = 0
+    if finished:
+        try:
+            total_secs = sum(
+                (datetime.fromisoformat(t['finished_at']) - datetime.fromisoformat(t['created_at'])).total_seconds()
+                for t in finished
+            )
+            avg_mins = round(total_secs / len(finished) / 60, 1)
+        except Exception:
+            pass
 
-    finished_turns = Turn.objects.filter(status='finished', finished_at__isnull=False)
-    avg_attention_time = finished_turns.aggregate(
-        avg=Avg(ExpressionWrapper(F('finished_at') - F('created_at'), output_field=DurationField()))
-    )['avg']
-    avg_attention_minutes = round(avg_attention_time.total_seconds() / 60, 1) if avg_attention_time else 0
+    # Peak hours today
+    hour_counter = Counter()
+    for t in today_turns:
+        try:
+            hour_counter[datetime.fromisoformat(t['created_at']).hour] += 1
+        except Exception:
+            pass
+    peak_hours = [{'hour': str(h).zfill(2) + ':00', 'count': c} for h, c in hour_counter.most_common(5)]
 
-    peak_hours_qs = Turn.objects.filter(created_at__date=today).annotate(
-        hour=ExtractHour('created_at')
-    ).values('hour').annotate(count=Count('id')).order_by('-count')[:5]
-    peak_hours = [{'hour': str(p['hour']).zfill(2) + ':00', 'count': p['count']} for p in peak_hours_qs]
+    svc_counter = Counter(t.get('service_type', '') for t in today_turns)
+    top_services = [{'service_type': s, 'count': c} for s, c in svc_counter.most_common(5)]
 
-    top_services_qs = Turn.objects.filter(created_at__date=today).values('service_type').annotate(count=Count('id')).order_by('-count')[:5]
-    top_services = [{'service_type': s['service_type'], 'count': s['count']} for s in top_services_qs]
-
-    top_entities_qs = Register.objects.filter(role='client', entidad__gt='').values('entidad').annotate(count=Count('id')).order_by('-count')[:5]
-    top_entities = [{'entidad': e['entidad'], 'count': e['count']} for e in top_entities_qs]
-
-    total_pending_docs = Turn.objects.filter(documents_pending__gt=0).aggregate(total=Sum('documents_pending'))['total'] or 0
-    total_approved_docs = Turn.objects.filter(documents_approved__gt=0).aggregate(total=Sum('documents_approved'))['total'] or 0
-    total_rejected_docs = Turn.objects.filter(documents_rejected__gt=0).aggregate(total=Sum('documents_rejected'))['total'] or 0
+    ent_counter = Counter(u.get('entidad', '') for u in all_users if u.get('role') == 'client' and u.get('entidad'))
+    top_entities = [{'entidad': e, 'count': c} for e, c in ent_counter.most_common(5)]
 
     return Response({
-        'total_users': total_users,
-        'total_clients': total_clients,
-        'total_employees': total_employees,
-        'turns_today': turns_today.count(),
-        'turns_active': turns_active,
-        'turns_attended': turns_attended,
-        'turns_cancelled': turns_cancelled,
-        'turns_presenciales': turns_presenciales,
-        'turns_virtuales': turns_virtuales,
-        'avg_attention_time': avg_attention_minutes,
-        'avg_wait_time': 0,
-        'peak_hours': peak_hours,
-        'top_services': top_services,
-        'top_entities': top_entities,
-        'pending_documents': total_pending_docs,
-        'approved_documents': total_approved_docs,
-        'rejected_documents': total_rejected_docs,
-        'service_stats': {
-            'general': Turn.objects.filter(service_type='general', created_at__date=today).count(),
-            'preferential': Turn.objects.filter(service_type='preferential', created_at__date=today).count(),
-            'emergency': Turn.objects.filter(service_type='emergency', created_at__date=today).count(),
-            'vip': Turn.objects.filter(service_type='vip', created_at__date=today).count(),
-            'virtual': Turn.objects.filter(service_type='virtual', created_at__date=today).count(),
-        }
+        'total_users':       len(all_users),
+        'total_clients':     sum(1 for u in all_users if u.get('role') == 'client'),
+        'total_employees':   sum(1 for u in all_users if u.get('role') == 'employee'),
+        'turns_today':       len(today_turns),
+        'turns_active':      sum(1 for t in all_turns if t.get('status') == 'called'),
+        'turns_attended':    sum(1 for t in today_turns if t.get('status') == 'finished'),
+        'turns_cancelled':   sum(1 for t in today_turns if t.get('status') == 'cancelled'),
+        'turns_presenciales':sum(1 for t in today_turns if t.get('service_type') != 'virtual'),
+        'turns_virtuales':   sum(1 for t in today_turns if t.get('service_type') == 'virtual'),
+        'avg_attention_time':avg_mins,
+        'avg_wait_time':     0,
+        'peak_hours':        peak_hours,
+        'top_services':      top_services,
+        'top_entities':      top_entities,
+        'pending_documents': 0,
+        'approved_documents':0,
+        'rejected_documents':0,
+        'service_stats':     {st: sum(1 for t in today_turns if t.get('service_type') == st) for st in service_types}
     })
 
+
+# ─── Turns ───────────────────────────────────────────────────────────────────
 
 @csrf_exempt
 @api_view(['GET'])
 def get_my_active_turn(request):
-    token = get_token_from_request(request)
-    payload = decode_access_token(token) if token else None
+    token    = get_token_from_request(request)
+    payload  = decode_access_token(token) if token else None
     username = (payload.get('username') or '') if payload else ''
-    if not username:
+    if not username or not db:
         return Response({'turn': None})
-    turn = Turn.objects.filter(created_by=username, status__in=['waiting', 'called']).first()
-    if not turn:
+
+    all_turns = _fs_all_turns()
+    active = [t for t in all_turns if t.get('created_by') == username and t.get('status') in ('waiting', 'called')]
+    if not active:
         return Response({'turn': None})
+    active.sort(key=lambda t: t.get('created_at', ''), reverse=True)
+    t = active[0]
     return Response({'turn': {
-        'id': turn.id,
-        'number': turn.number,
-        'status': turn.status,
-        'service_type': turn.service_type,
-        'sede': turn.sede or '',
-        'created_at': turn.created_at.strftime('%d/%m/%Y %H:%M') if turn.created_at else '',
+        'id':           t.get('_doc_id', ''),
+        'number':       t.get('number', ''),
+        'status':       t.get('status', ''),
+        'service_type': t.get('service_type', ''),
+        'sede':         t.get('sede', ''),
+        'created_at':   _fmt_datetime(t.get('created_at', '')),
     }})
 
 
 @csrf_exempt
 @api_view(['POST'])
 def create_turn(request):
-    service_type = request.data.get('service_type', 'general')
-    sede = request.data.get('sede', 'MOSQUERA')
-    token = get_token_from_request(request)
-    payload = decode_access_token(token) if token else None
-    user_name = (payload.get('username') or '') if payload else ''
+    if not db:
+        return Response({'error': 'Servicio no disponible'}, status=503)
 
-    # Prevent a client from having more than one active turn
+    service_type = request.data.get('service_type', 'general')
+    sede         = request.data.get('sede', 'MOSQUERA')
+    token        = get_token_from_request(request)
+    payload      = decode_access_token(token) if token else None
+    user_name    = (payload.get('username') or '') if payload else ''
+
+    # Prevent duplicate active turns
     if user_name:
-        existing = Turn.objects.filter(created_by=user_name, status__in=['waiting', 'called']).first()
+        all_turns = _fs_all_turns()
+        existing = next(
+            (t for t in all_turns if t.get('created_by') == user_name and t.get('status') in ('waiting', 'called')),
+            None
+        )
         if existing:
             return Response({
-                'error': 'Ya tienes un turno activo',
-                'existing_number': existing.number,
-                'existing_sede': existing.sede or ''
+                'error':           'Ya tienes un turno activo',
+                'existing_number': existing.get('number', ''),
+                'existing_sede':   existing.get('sede', '')
             }, status=400)
 
     prefix = get_turn_prefix(service_type)
-    number = generate_turn(prefix, sede)
+    number = generate_turn_fb(prefix, sede)
 
     client_data = {}
-    created_by = None
     if user_name:
-        client = Register.objects.filter(username=user_name).first()
-        if client:
+        u = _fs_get_user(user_name)
+        if u:
             client_data = {
-                'username': user_name,
-                'full_name': client.full_name,
-                'cedula': client.cedula,
-                'email': client.email,
-                'phone': client.phone,
-                'document_type': client.document_type,
-                'role': client.role
+                'username':      user_name,
+                'full_name':     u.get('full_name', ''),
+                'cedula':        u.get('cedula', ''),
+                'email':         u.get('email', ''),
+                'phone':         u.get('phone', ''),
+                'document_type': u.get('document_type', ''),
+                'role':          u.get('role', '')
             }
-            created_by = user_name
 
-    Turn.objects.create(number=number, service_type=service_type, sede=sede, created_by=user_name)
-
-    if db:
-        try:
-            db.collection("turns").document(number).set({
-                "number": number,
-                "status": "waiting",
-                "service_type": service_type,
-                "sede": sede,
-                "client_data": client_data,
-                "created_by": created_by,
-                "created_at": timezone.now().isoformat()
-            })
-        except Exception:
-            pass
-
+    db.collection('turns').add({
+        'number':        number,
+        'status':        'waiting',
+        'service_type':  service_type,
+        'sede':          sede,
+        'client_data':   client_data,
+        'created_by':    user_name,
+        'called_by':     '',
+        'created_at':    timezone.now().isoformat(),
+        'finished_at':   '',
+        'scheduled_for': '',
+    })
     broadcast_turn_update()
-    return Response({"number": number})
-
-
-def broadcast_turn_update():
-    turns = Turn.objects.all().order_by('-created_at')
-    turns_data = []
-    for t in turns:
-        called_by_name = getattr(t, 'assigned_employee', None)
-        turns_data.append({
-            'number': t.number,
-            'status': t.status,
-            'service_type': t.service_type,
-            'sede': t.sede,
-            'created_at': t.created_at.strftime('%H:%M') if t.created_at else '',
-            'called_by': called_by_name,
-            'created_by': t.created_by or '',
-            'scheduled_for': t.scheduled_for.strftime('%d/%m/%Y %H:%M') if t.scheduled_for else ''
-        })
-    try:
-        channel_layer = get_channel_layer()
-        if channel_layer:
-            async_to_sync(channel_layer.group_send)('turns', {'type': 'turn_update', 'data': turns_data})
-    except Exception:
-        pass
+    return Response({'number': number})
 
 
 @csrf_exempt
@@ -820,40 +826,35 @@ def broadcast_turn_update():
 @jwt_required
 @role_required('admin', 'employee')
 def call_next(request):
-    service_type = request.data.get('service_type', '')
-    token = get_token_from_request(request)
-    payload = decode_access_token(token) if token else None
-    called_by = (payload.get('username') or '') if payload else ''
-    calling_role = (payload.get('role') or '') if payload else ''
+    if not db:
+        return Response({'message': 'Servicio no disponible'}, status=503)
 
-    employee_sede = ''
-    if calling_role == 'employee' and called_by:
-        emp = Register.objects.filter(username=called_by).first()
-        employee_sede = (emp.sede or '') if emp else ''
+    service_type  = request.data.get('service_type', '')
+    token         = get_token_from_request(request)
+    payload       = decode_access_token(token) if token else None
+    called_by     = (payload.get('username') or '') if payload else ''
+    calling_role  = (payload.get('role')     or '') if payload else ''
+    employee_sede = _get_employee_sede(called_by, calling_role)
 
-    qs = Turn.objects.filter(status='waiting')
+    all_turns = _fs_all_turns()
+    waiting = [t for t in all_turns if t.get('status') == 'waiting']
     if employee_sede:
-        qs = qs.filter(sede=employee_sede)
+        waiting = [t for t in waiting if t.get('sede') == employee_sede]
     if service_type:
-        qs = qs.filter(service_type=service_type)
+        waiting = [t for t in waiting if t.get('service_type') == service_type]
+    waiting.sort(key=lambda t: t.get('created_at', ''))
 
-    turn = qs.order_by('created_at').first()
-    if turn:
-        turn.status = 'called'
-        turn.assigned_employee = called_by
-        turn.save()
-        if db:
-            try:
-                db.collection('turns').document(turn.number).update({
-                    'status': 'called',
-                    'called_by': called_by,
-                    'called_at': timezone.now().isoformat()
-                })
-            except Exception:
-                pass
-        broadcast_turn_update()
-        return Response({'number': turn.number})
-    return Response({'message': 'No turns waiting'}, status=200)
+    if not waiting:
+        return Response({'message': 'No turns waiting'}, status=200)
+
+    turn = waiting[0]
+    db.collection('turns').document(turn['_doc_id']).update({
+        'status':    'called',
+        'called_by': called_by,
+        'called_at': timezone.now().isoformat()
+    })
+    broadcast_turn_update()
+    return Response({'number': turn.get('number')})
 
 
 @csrf_exempt
@@ -861,39 +862,39 @@ def call_next(request):
 @jwt_required
 @role_required('admin', 'employee')
 def get_all_turns(request):
-    token = get_token_from_request(request)
-    payload = decode_access_token(token) if token else None
+    token    = get_token_from_request(request)
+    payload  = decode_access_token(token) if token else None
     username = (payload.get('username') or '') if payload else ''
-    role = (payload.get('role') or '') if payload else ''
-    sede = _get_employee_sede(username, role)
+    role     = (payload.get('role')     or '') if payload else ''
+    sede     = _get_employee_sede(username, role)
+
+    all_turns = _fs_all_turns()
     if sede:
-        turns = Turn.objects.filter(sede=sede).order_by('-created_at')
-    else:
-        turns = Turn.objects.all().order_by('-created_at')
-    turns_data = []
-    for t in turns:
-        called_by_name = None
-        if t.status == 'called' and hasattr(t, 'assigned_employee') and t.assigned_employee:
-            called_by_name = t.assigned_employee
-        turns_data.append({
-            'number': t.number,
-            'status': t.status,
-            'service_type': t.service_type,
-            'sede': t.sede,
-            'created_at': t.created_at.strftime('%H:%M') if t.created_at else '',
-            'called_by': called_by_name,
-            'created_by': t.created_by or '',
-            'scheduled_for': t.scheduled_for.strftime('%d/%m/%Y %H:%M') if t.scheduled_for else ''
-        })
-    return Response({'turns': turns_data})
+        all_turns = [t for t in all_turns if t.get('sede') == sede]
+    all_turns.sort(key=lambda t: t.get('created_at', ''), reverse=True)
+
+    return Response({'turns': [{
+        'id':           t.get('_doc_id', ''),
+        'number':       t.get('number', ''),
+        'status':       t.get('status', ''),
+        'service_type': t.get('service_type', ''),
+        'sede':         t.get('sede', ''),
+        'created_at':   _fmt_time(t.get('created_at', '')),
+        'called_by':    t.get('called_by', ''),
+        'created_by':   t.get('created_by', ''),
+        'scheduled_for':_fmt_datetime(t.get('scheduled_for', ''))
+    } for t in all_turns]})
 
 
 @csrf_exempt
 @api_view(['GET'])
 def get_current_turn(request):
-    turn = Turn.objects.filter(status='called').order_by('-created_at').first()
-    if turn:
-        return Response({'number': turn.number, 'service_type': turn.service_type})
+    if not db:
+        return Response({'number': None})
+    all_turns = _fs_all_turns()
+    called = sorted([t for t in all_turns if t.get('status') == 'called'], key=lambda t: t.get('created_at', ''), reverse=True)
+    if called:
+        return Response({'number': called[0].get('number'), 'service_type': called[0].get('service_type')})
     return Response({'number': None})
 
 
@@ -903,62 +904,58 @@ def get_current_turn(request):
 @role_required('admin', 'employee')
 def get_waiting_turns(request):
     service_type = request.GET.get('service_type', 'general')
-    turns = Turn.objects.filter(status='waiting', service_type=service_type).order_by('created_at')
-    turns_data = []
-    for t in turns:
-        turns_data.append({
-            'number': t.number,
-            'service_type': t.service_type
-        })
-    return Response({'turns': turns_data})
+    if not db:
+        return Response({'turns': []})
+    all_turns = _fs_all_turns()
+    waiting = sorted(
+        [t for t in all_turns if t.get('status') == 'waiting' and t.get('service_type') == service_type],
+        key=lambda t: t.get('created_at', '')
+    )
+    return Response({'turns': [{'number': t.get('number'), 'service_type': t.get('service_type')} for t in waiting]})
 
 
 @csrf_exempt
 @api_view(['GET'])
 def get_next_turn(request):
     service_type = request.GET.get('service_type', 'general')
-    turn = Turn.objects.filter(status='waiting', service_type=service_type).order_by('created_at').first()
-    if turn:
-        return Response({'number': turn.number})
-    return Response({'number': None})
-
-
-def _get_employee_sede(username, role):
-    if role == 'employee' and username:
-        emp = Register.objects.filter(username=username).first()
-        return (emp.sede or '') if emp else ''
-    return ''
+    if not db:
+        return Response({'number': None})
+    all_turns = _fs_all_turns()
+    waiting = sorted(
+        [t for t in all_turns if t.get('status') == 'waiting' and t.get('service_type') == service_type],
+        key=lambda t: t.get('created_at', '')
+    )
+    return Response({'number': waiting[0].get('number') if waiting else None})
 
 
 @csrf_exempt
 @api_view(['POST'])
 def finish_current_turn(request):
-    token = get_token_from_request(request)
-    payload = decode_access_token(token) if token else None
-    finished_by = (payload.get('username') or '') if payload else ''
-    role = (payload.get('role') or '') if payload else ''
-    sede = _get_employee_sede(finished_by, role)
+    token    = get_token_from_request(request)
+    payload  = decode_access_token(token) if token else None
+    done_by  = (payload.get('username') or '') if payload else ''
+    role     = (payload.get('role')     or '') if payload else ''
+    sede     = _get_employee_sede(done_by, role)
 
-    qs = Turn.objects.filter(status='called')
+    if not db:
+        return Response({'message': 'Servicio no disponible'}, status=503)
+
+    all_turns = _fs_all_turns()
+    called = [t for t in all_turns if t.get('status') == 'called']
     if sede:
-        qs = qs.filter(sede=sede)
-    turn = qs.order_by('-created_at').first()
-    if turn:
-        turn.status = 'finished'
-        turn.finished_at = timezone.now()
-        turn.save()
-        if db:
-            try:
-                db.collection('turns').document(turn.number).update({
-                    'status': 'finished',
-                    'finished_at': timezone.now().isoformat(),
-                    'finished_by': finished_by
-                })
-            except Exception:
-                pass
-        broadcast_turn_update()
-        return Response({'number': turn.number})
-    return Response({'message': 'No turn in progress'}, status=200)
+        called = [t for t in called if t.get('sede') == sede]
+    called.sort(key=lambda t: t.get('created_at', ''), reverse=True)
+    if not called:
+        return Response({'message': 'No turn in progress'}, status=200)
+
+    turn = called[0]
+    db.collection('turns').document(turn['_doc_id']).update({
+        'status':      'finished',
+        'finished_at': timezone.now().isoformat(),
+        'finished_by': done_by
+    })
+    broadcast_turn_update()
+    return Response({'number': turn.get('number')})
 
 
 @csrf_exempt
@@ -966,66 +963,61 @@ def finish_current_turn(request):
 @jwt_required
 @role_required('admin', 'employee')
 def call_specific_turn(request):
-    turn_number = request.data.get('turn_number', '')
-    token = get_token_from_request(request)
-    payload = decode_access_token(token) if token else None
-    called_by = (payload.get('username') or '') if payload else ''
-    calling_role = (payload.get('role') or '') if payload else ''
+    turn_number   = request.data.get('turn_number', '')
+    token         = get_token_from_request(request)
+    payload       = decode_access_token(token) if token else None
+    called_by     = (payload.get('username') or '') if payload else ''
+    calling_role  = (payload.get('role')     or '') if payload else ''
+    employee_sede = _get_employee_sede(called_by, calling_role)
 
-    employee_sede = ''
-    if calling_role == 'employee' and called_by:
-        emp = Register.objects.filter(username=called_by).first()
-        employee_sede = (emp.sede or '') if emp else ''
+    if not db:
+        return Response({'success': False, 'message': 'Servicio no disponible'}, status=503)
 
-    qs = Turn.objects.filter(number=turn_number, status='waiting')
+    all_turns = _fs_all_turns()
+    candidates = [t for t in all_turns if t.get('number') == turn_number and t.get('status') == 'waiting']
     if employee_sede:
-        qs = qs.filter(sede=employee_sede)
-    turn = qs.first()
-    if turn:
-        turn.status = 'called'
-        turn.assigned_employee = called_by
-        turn.save()
-        if db:
-            try:
-                db.collection('turns').document(turn.number).update({
-                    'status': 'called',
-                    'called_by': called_by,
-                    'called_at': timezone.now().isoformat()
-                })
-            except Exception:
-                pass
-        broadcast_turn_update()
-        return Response({'success': True, 'number': turn.number})
-    return Response({'success': False, 'message': 'Turn not found'}, status=404)
+        candidates = [t for t in candidates if t.get('sede') == employee_sede]
+    if not candidates:
+        return Response({'success': False, 'message': 'Turn not found'}, status=404)
+
+    turn = candidates[0]
+    db.collection('turns').document(turn['_doc_id']).update({
+        'status':    'called',
+        'called_by': called_by,
+        'called_at': timezone.now().isoformat()
+    })
+    broadcast_turn_update()
+    return Response({'success': True, 'number': turn.get('number')})
 
 
 @csrf_exempt
 @api_view(['POST'])
 def reschedule_current(request):
-    token = get_token_from_request(request)
-    payload = decode_access_token(token) if token else None
+    token    = get_token_from_request(request)
+    payload  = decode_access_token(token) if token else None
     username = (payload.get('username') or '') if payload else ''
-    role = (payload.get('role') or '') if payload else ''
-    sede = _get_employee_sede(username, role)
+    role     = (payload.get('role')     or '') if payload else ''
+    sede     = _get_employee_sede(username, role)
 
-    qs = Turn.objects.filter(status='called')
+    if not db:
+        return Response({'success': False, 'message': 'Servicio no disponible'}, status=503)
+
+    all_turns = _fs_all_turns()
+    called = [t for t in all_turns if t.get('status') == 'called']
     if sede:
-        qs = qs.filter(sede=sede)
-    turn = qs.order_by('-created_at').first()
-    if not turn:
+        called = [t for t in called if t.get('sede') == sede]
+    called.sort(key=lambda t: t.get('created_at', ''), reverse=True)
+    if not called:
         return Response({'success': False, 'message': 'No hay turno en progreso'}, status=404)
-    turn.status = 'waiting'
-    turn.save()
-    if db:
-        try:
-            db.collection('turns').document(turn.number).update({
-                'status': 'waiting',
-                'rescheduled_at': timezone.now().isoformat()
-            })
-        except Exception:
-            pass
+
+    turn = called[0]
+    db.collection('turns').document(turn['_doc_id']).update({
+        'status':         'waiting',
+        'called_by':      '',
+        'rescheduled_at': timezone.now().isoformat()
+    })
     broadcast_turn_update()
-    return Response({'success': True, 'number': turn.number})
+    return Response({'success': True, 'number': turn.get('number')})
 
 
 @csrf_exempt
@@ -1033,28 +1025,29 @@ def reschedule_current(request):
 @jwt_required
 @role_required('admin', 'employee')
 def cancel_current(request):
-    token = get_token_from_request(request)
-    payload = decode_access_token(token) if token else None
+    token    = get_token_from_request(request)
+    payload  = decode_access_token(token) if token else None
     username = (payload.get('username') or '') if payload else ''
-    role = (payload.get('role') or '') if payload else ''
-    sede = _get_employee_sede(username, role)
+    role     = (payload.get('role')     or '') if payload else ''
+    sede     = _get_employee_sede(username, role)
 
-    qs = Turn.objects.filter(status='called')
+    if not db:
+        return Response({'success': False, 'message': 'Servicio no disponible'}, status=503)
+
+    all_turns = _fs_all_turns()
+    called = [t for t in all_turns if t.get('status') == 'called']
     if sede:
-        qs = qs.filter(sede=sede)
-    turn = qs.order_by('-created_at').first()
-    if not turn:
+        called = [t for t in called if t.get('sede') == sede]
+    called.sort(key=lambda t: t.get('created_at', ''), reverse=True)
+    if not called:
         return Response({'success': False, 'message': 'No hay turno en progreso'}, status=404)
-    turn_number = turn.number
-    if db:
-        try:
-            db.collection('turns').document(turn_number).update({
-                'status': 'cancelled',
-                'cancelled_at': timezone.now().isoformat()
-            })
-        except Exception:
-            pass
-    turn.delete()
+
+    turn = called[0]
+    db.collection('turns').document(turn['_doc_id']).update({
+        'status':       'cancelled',
+        'cancelled_at': timezone.now().isoformat(),
+        'cancelled_by': username
+    })
     broadcast_turn_update()
     return Response({'success': True, 'message': 'Turno cancelado'})
 
@@ -1064,29 +1057,21 @@ def cancel_current(request):
 @jwt_required
 @role_required('admin', 'employee')
 def reschedule_turn(request, turn_number):
-    from django.utils.dateparse import parse_datetime
-    turn = Turn.objects.filter(number=turn_number).first()
-    if not turn:
+    if not db:
+        return Response({'success': False, 'message': 'Servicio no disponible'}, status=503)
+
+    all_turns = _fs_all_turns()
+    matches = [t for t in all_turns if t.get('number') == turn_number]
+    if not matches:
         return Response({'success': False, 'message': 'Turno no encontrado'}, status=404)
-    turn.status = 'waiting'
+
     scheduled_date_str = request.data.get('scheduled_date', '')
-    if scheduled_date_str:
-        try:
-            scheduled_dt = parse_datetime(scheduled_date_str)
-            if scheduled_dt:
-                turn.scheduled_for = scheduled_dt
-        except Exception:
-            pass
-    turn.save()
-    if db:
-        try:
-            db.collection('turns').document(turn_number).update({
-                'status': 'waiting',
-                'scheduled_for': scheduled_date_str,
-                'rescheduled_at': timezone.now().isoformat()
-            })
-        except Exception:
-            pass
+    db.collection('turns').document(matches[0]['_doc_id']).update({
+        'status':          'waiting',
+        'called_by':       '',
+        'scheduled_for':   scheduled_date_str,
+        'rescheduled_at':  timezone.now().isoformat()
+    })
     broadcast_turn_update()
     return Response({'success': True, 'message': 'Turno reagendado', 'scheduled_for': scheduled_date_str})
 
@@ -1095,81 +1080,87 @@ def reschedule_turn(request, turn_number):
 @api_view(['GET'])
 def get_user_position(request):
     turn_number = request.GET.get('turn_number', '')
-    if not turn_number:
+    if not turn_number or not db:
         return Response({'position': None, 'turns_ahead': 0, 'status': None})
-    turns = Turn.objects.filter(status='waiting').order_by('created_at')
-    position = None
-    for i, t in enumerate(turns, 1):
-        if t.number == turn_number:
-            position = i
-            break
-    turn = Turn.objects.filter(number=turn_number).first()
-    turn_status = turn.status if turn else None
-    return Response({'position': position, 'turns_ahead': max(0, position - 1) if position else 0, 'status': turn_status})
+
+    all_turns = _fs_all_turns()
+    waiting   = sorted([t for t in all_turns if t.get('status') == 'waiting'], key=lambda t: t.get('created_at', ''))
+    position  = next((i + 1 for i, t in enumerate(waiting) if t.get('number') == turn_number), None)
+    turn_doc  = next((t for t in all_turns if t.get('number') == turn_number), None)
+    return Response({
+        'position':    position,
+        'turns_ahead': max(0, position - 1) if position else 0,
+        'status':      turn_doc.get('status') if turn_doc else None
+    })
 
 
 @csrf_exempt
 @api_view(['POST'])
 def complete_turn(request):
     turn_number = request.data.get('turn_number', '')
-    token = get_token_from_request(request)
-    payload = decode_access_token(token) if token else None
-    finished_by = payload.get('username', '') if payload else ''
+    token       = get_token_from_request(request)
+    payload     = decode_access_token(token) if token else None
+    done_by     = payload.get('username', '') if payload else ''
 
-    turn = Turn.objects.filter(number=turn_number).first()
-    if turn:
-        turn.status = 'finished'
-        turn.finished_at = timezone.now()
-        turn.save()
-        if db:
-            try:
-                db.collection('turns').document(turn.number).update({
-                    'status': 'finished',
-                    'finished_at': timezone.now().isoformat(),
-                    'finished_by': finished_by
-                })
-            except Exception:
-                pass
-        broadcast_turn_update()
-        return Response({'number': turn.number})
-    return Response({'message': 'Turn not found'}, status=404)
+    if not db or not turn_number:
+        return Response({'message': 'Turn not found'}, status=404)
+
+    all_turns = _fs_all_turns()
+    matches   = [t for t in all_turns if t.get('number') == turn_number]
+    if not matches:
+        return Response({'message': 'Turn not found'}, status=404)
+
+    db.collection('turns').document(matches[0]['_doc_id']).update({
+        'status':      'finished',
+        'finished_at': timezone.now().isoformat(),
+        'finished_by': done_by
+    })
+    broadcast_turn_update()
+    return Response({'number': matches[0].get('number')})
 
 
 @csrf_exempt
 @api_view(['DELETE'])
 def cancel_turn(request, turn_number):
-    token = get_token_from_request(request)
-    payload = decode_access_token(token) if token else None
-    cancelled_by = payload.get('username', '') if payload else ''
+    token     = get_token_from_request(request)
+    payload   = decode_access_token(token) if token else None
+    c_by      = payload.get('username', '') if payload else ''
 
     if db:
-        try:
-            db.collection('turns').document(turn_number).update({
-                'status': 'cancelled',
-                'cancelled_by': cancelled_by,
+        all_turns = _fs_all_turns()
+        for t in [x for x in all_turns if x.get('number') == turn_number]:
+            db.collection('turns').document(t['_doc_id']).update({
+                'status':       'cancelled',
+                'cancelled_by': c_by,
                 'cancelled_at': timezone.now().isoformat()
             })
-        except Exception:
-            pass
-    Turn.objects.filter(number=turn_number).delete()
-    broadcast_turn_update()
+        broadcast_turn_update()
     return Response({'success': True})
 
 
 @csrf_exempt
 @api_view(['DELETE'])
 def cancel_turn_by_id(request, turn_id):
-    token = get_token_from_request(request)
-    payload = decode_access_token(token) if token else None
+    token    = get_token_from_request(request)
+    payload  = decode_access_token(token) if token else None
     username = (payload.get('username') or '') if payload else ''
 
-    turn = Turn.objects.filter(id=turn_id, created_by=username, status='waiting').first()
-    if not turn:
+    if not db:
+        return Response({'error': 'Servicio no disponible'}, status=503)
+
+    doc = db.collection('turns').document(str(turn_id)).get()
+    if not doc.exists:
         return Response({'error': 'Turno no encontrado o no se puede cancelar'}, status=404)
 
-    turn.status = 'cancelled'
-    turn.finished_at = timezone.now()
-    turn.save()
+    t = doc.to_dict() or {}
+    if t.get('created_by') != username or t.get('status') != 'waiting':
+        return Response({'error': 'Turno no encontrado o no se puede cancelar'}, status=404)
+
+    db.collection('turns').document(str(turn_id)).update({
+        'status':       'cancelled',
+        'finished_at':  timezone.now().isoformat(),
+        'cancelled_by': username
+    })
     broadcast_turn_update()
     return Response({'success': True})
 
@@ -1177,31 +1168,31 @@ def cancel_turn_by_id(request, turn_id):
 @csrf_exempt
 @api_view(['POST'])
 def reset_turns(request):
-    Turn.objects.all().delete()
     if db:
-        try:
-            turns_ref = db.collection('turns')
-            for doc in turns_ref.stream():
-                doc.reference.delete()
-        except Exception:
-            pass
-    broadcast_turn_update()
+        for doc in db.collection('turns').stream():
+            doc.reference.delete()
+        broadcast_turn_update()
     return Response({'success': True, 'message': 'Turnos eliminados'})
 
 
 @csrf_exempt
 @api_view(['GET'])
 def get_statistics(request):
-    from .statistics import get_turn_statistics
-    stats = get_turn_statistics()
-    return Response(stats)
+    if not db:
+        return Response({'total': 0, 'waiting': 0, 'called': 0, 'finished': 0, 'cancelled': 0})
+    all_turns = _fs_all_turns()
+    return Response({
+        'total':     len(all_turns),
+        'waiting':   sum(1 for t in all_turns if t.get('status') == 'waiting'),
+        'called':    sum(1 for t in all_turns if t.get('status') == 'called'),
+        'finished':  sum(1 for t in all_turns if t.get('status') == 'finished'),
+        'cancelled': sum(1 for t in all_turns if t.get('status') == 'cancelled'),
+    })
 
 
 @csrf_exempt
 @api_view(['GET'])
 def get_reports(request):
-    today = date.today()
-    hourly_turns = Turn.objects.filter(created_at__date=today, status='waiting').values('service_type').annotate(count=Count('id'))
     return Response({'hourly_stats': {str(i): 0 for i in range(24)}})
 
 
@@ -1211,8 +1202,11 @@ def export_csv(request):
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(['number', 'status', 'service_type', 'created_at'])
-    for turn in Turn.objects.all().values_list('number', 'status', 'service_type', 'created_at'):
-        writer.writerow(turn)
+    if db:
+        for doc in db.collection('turns').stream():
+            t = doc.to_dict()
+            if t:
+                writer.writerow([t.get('number'), t.get('status'), t.get('service_type'), t.get('created_at')])
     response = HttpResponse(output.getvalue(), content_type='text/csv')
     response['Content-Disposition'] = 'attachment; filename="turns.csv"'
     return response
@@ -1221,12 +1215,17 @@ def export_csv(request):
 @csrf_exempt
 @api_view(['GET'])
 def export_excel(request):
-    df = pd.DataFrame(list(Turn.objects.values('number', 'status', 'service_type', 'created_at')))
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False)
-    response = HttpResponse(output.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    response['Content-Disposition'] = 'attachment; filename="turns.xlsx"'
+    # Return CSV (avoids pandas/openpyxl dependency)
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['number', 'status', 'service_type', 'created_at'])
+    if db:
+        for doc in db.collection('turns').stream():
+            t = doc.to_dict()
+            if t:
+                writer.writerow([t.get('number'), t.get('status'), t.get('service_type'), t.get('created_at')])
+    response = HttpResponse(output.getvalue(), content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename="turns.csv"'
     return response
 
 
@@ -1242,127 +1241,125 @@ def set_required_documents(request):
 @csrf_exempt
 @api_view(['POST'])
 def upload_document(request):
-    turn_number = request.data.get('turn_number', '')
+    turn_number  = request.data.get('turn_number', '')
     document_url = request.data.get('document_url', '')
-    turn = Turn.objects.filter(number=turn_number).first()
-    if turn:
-        turn.uploaded_documents = document_url
-        turn.save()
-        return Response({'success': True})
-    return Response({'success': False, 'message': 'Turn not found'}, status=404)
+    if not db or not turn_number:
+        return Response({'success': False, 'message': 'Turn not found'}, status=404)
+    all_turns = _fs_all_turns()
+    matches = [t for t in all_turns if t.get('number') == turn_number]
+    if not matches:
+        return Response({'success': False, 'message': 'Turn not found'}, status=404)
+    db.collection('turns').document(matches[0]['_doc_id']).update({'uploaded_documents': document_url})
+    return Response({'success': True})
 
 
 @csrf_exempt
 @api_view(['GET'])
 def my_turns(request):
-    token = get_token_from_request(request)
-    payload = decode_access_token(token) if token else None
+    token    = get_token_from_request(request)
+    payload  = decode_access_token(token) if token else None
     username = payload.get('username', '') if payload else ''
-    
-    if not username:
+
+    if not username or not db:
         return Response({'turns': []})
-    
-    turns = Turn.objects.filter(created_by=username).order_by('-created_at')
-    turns_data = [{
-        'id': t.id,
-        'number': t.number,
-        'status': t.status,
-        'service_type': t.service_type,
-        'sede': t.sede or 'N/A',
-        'created_at': t.created_at.strftime('%d/%m/%Y %H:%M') if t.created_at else '',
-        'finished_at': t.finished_at.strftime('%d/%m/%Y %H:%M') if t.finished_at else None,
-        'scheduled_for': t.scheduled_for.strftime('%d/%m/%Y %H:%M') if t.scheduled_for else None,
-    } for t in turns]
 
-    return Response({'turns': turns_data})
+    all_turns  = _fs_all_turns()
+    user_turns = sorted(
+        [t for t in all_turns if t.get('created_by') == username],
+        key=lambda t: t.get('created_at', ''),
+        reverse=True
+    )
 
+    return Response({'turns': [{
+        'id':           t.get('_doc_id', ''),
+        'number':       t.get('number', ''),
+        'status':       t.get('status', ''),
+        'service_type': t.get('service_type', ''),
+        'sede':         t.get('sede', '') or 'N/A',
+        'created_at':   _fmt_datetime(t.get('created_at', '')),
+        'finished_at':  _fmt_datetime(t.get('finished_at', '')) or None,
+        'scheduled_for':_fmt_datetime(t.get('scheduled_for', '')) or None,
+    } for t in user_turns]})
+
+
+# ─── Sedes ───────────────────────────────────────────────────────────────────
 
 @csrf_exempt
 @api_view(['GET'])
 def get_sedes(request):
-    sedes = Sede.objects.filter(is_active=True).order_by('name')
-    data = [{'id': s.id, 'name': s.name, 'city': s.city, 'address': s.address, 'is_active': s.is_active} for s in sedes]
-    return Response({'sedes': data})
+    if not db:
+        return Response({'sedes': []})
+    sedes = []
+    for doc in db.collection('sedes').stream():
+        d = doc.to_dict()
+        if d and d.get('is_active', True):
+            sedes.append({'id': doc.id, 'name': d.get('name', ''), 'city': d.get('city', ''), 'address': d.get('address', ''), 'is_active': True})
+    sedes.sort(key=lambda s: s.get('name', ''))
+    return Response({'sedes': sedes})
+
 
 @csrf_exempt
 @api_view(['POST'])
 @jwt_required
 @role_required('admin')
 def create_sede(request):
-    name = request.data.get('name', '').strip()
-    city = request.data.get('city', '').strip()
+    name    = request.data.get('name',    '').strip()
+    city    = request.data.get('city',    '').strip()
     address = request.data.get('address', '').strip()
+
     if not name:
-        return Response({'success': False, 'message': 'El nombre de la sede es requerido'}, status=status.HTTP_400_BAD_REQUEST)
-    if Sede.objects.filter(name__iexact=name).exists():
-        return Response({'success': False, 'message': 'Ya existe una sede con ese nombre'}, status=status.HTTP_409_CONFLICT)
-    sede = Sede.objects.create(name=name, city=city, address=address)
+        return Response({'success': False, 'message': 'El nombre de la sede es requerido'}, status=400)
+    if not db:
+        return Response({'success': False, 'message': 'Servicio no disponible'}, status=503)
 
-    if db:
-        try:
-            db.collection("sedes").document(str(sede.id)).set({
-                'id': sede.id,
-                'name': sede.name,
-                'city': sede.city,
-                'address': sede.address,
-                'is_active': True,
-                'created_at': timezone.now().isoformat(),
-                'updated_at': timezone.now().isoformat()
-            })
-        except Exception:
-            pass
+    for doc in db.collection('sedes').stream():
+        d = doc.to_dict() or {}
+        if d.get('name', '').lower() == name.lower() and d.get('is_active', True):
+            return Response({'success': False, 'message': 'Ya existe una sede con ese nombre'}, status=409)
 
-    return Response({'success': True, 'message': 'Sede creada correctamente', 'sede': {'id': sede.id, 'name': sede.name, 'city': sede.city, 'address': sede.address}})
+    now_iso = timezone.now().isoformat()
+    _, doc_ref = db.collection('sedes').add({'name': name, 'city': city, 'address': address, 'is_active': True, 'created_at': now_iso, 'updated_at': now_iso})
+    return Response({'success': True, 'message': 'Sede creada correctamente', 'sede': {'id': doc_ref.id, 'name': name, 'city': city, 'address': address}})
+
 
 @csrf_exempt
 @api_view(['POST'])
 @jwt_required
 @role_required('admin')
 def update_sede(request, sede_id):
-    sede = Sede.objects.filter(id=sede_id).first()
-    if not sede:
-        return Response({'success': False, 'message': 'Sede no encontrada'}, status=status.HTTP_404_NOT_FOUND)
-    name = request.data.get('name', sede.name).strip()
-    city = request.data.get('city', sede.city).strip()
-    address = request.data.get('address', sede.address).strip()
-    if Sede.objects.filter(name__iexact=name).exclude(id=sede_id).exists():
-        return Response({'success': False, 'message': 'Ya existe una sede con ese nombre'}, status=status.HTTP_409_CONFLICT)
-    sede.name = name
-    sede.city = city
-    sede.address = address
-    sede.save()
+    if not db:
+        return Response({'success': False, 'message': 'Servicio no disponible'}, status=503)
 
-    if db:
-        try:
-            db.collection("sedes").document(str(sede.id)).update({
-                'name': sede.name,
-                'city': sede.city,
-                'address': sede.address,
-                'updated_at': timezone.now().isoformat()
-            })
-        except Exception:
-            pass
+    doc = db.collection('sedes').document(str(sede_id)).get()
+    if not doc.exists:
+        return Response({'success': False, 'message': 'Sede no encontrada'}, status=404)
 
-    return Response({'success': True, 'message': 'Sede actualizada correctamente', 'sede': {'id': sede.id, 'name': sede.name, 'city': sede.city, 'address': sede.address}})
+    current = doc.to_dict() or {}
+    name    = request.data.get('name',    current.get('name', '')).strip()
+    city    = request.data.get('city',    current.get('city', '')).strip()
+    address = request.data.get('address', current.get('address', '')).strip()
+
+    for d in db.collection('sedes').stream():
+        dd = d.to_dict() or {}
+        if d.id != str(sede_id) and dd.get('name', '').lower() == name.lower() and dd.get('is_active', True):
+            return Response({'success': False, 'message': 'Ya existe una sede con ese nombre'}, status=409)
+
+    db.collection('sedes').document(str(sede_id)).update({'name': name, 'city': city, 'address': address, 'updated_at': timezone.now().isoformat()})
+    return Response({'success': True, 'message': 'Sede actualizada correctamente', 'sede': {'id': sede_id, 'name': name, 'city': city, 'address': address}})
+
 
 @csrf_exempt
 @api_view(['DELETE'])
 @jwt_required
 @role_required('admin')
 def delete_sede(request, sede_id):
-    sede = Sede.objects.filter(id=sede_id).first()
-    if not sede:
-        return Response({'success': False, 'message': 'Sede no encontrada'}, status=status.HTTP_404_NOT_FOUND)
-    sede.is_active = False
-    sede.save()
+    if not db:
+        return Response({'success': False, 'message': 'Servicio no disponible'}, status=503)
 
-    if db:
-        try:
-            db.collection("sedes").document(str(sede.id)).update({
-                'is_active': False,
-                'updated_at': timezone.now().isoformat()
-            })
-        except Exception:
-            pass
+    doc = db.collection('sedes').document(str(sede_id)).get()
+    if not doc.exists:
+        return Response({'success': False, 'message': 'Sede no encontrada'}, status=404)
 
-    return Response({'success': True, 'message': f'Sede {sede.name} eliminada correctamente'})
+    name = (doc.to_dict() or {}).get('name', str(sede_id))
+    db.collection('sedes').document(str(sede_id)).update({'is_active': False, 'updated_at': timezone.now().isoformat()})
+    return Response({'success': True, 'message': f'Sede {name} eliminada correctamente'})

@@ -1,36 +1,21 @@
 import json
-import asyncio
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
-from django.utils import timezone
-from datetime import timedelta
+
 
 class TurnConsumer(AsyncWebsocketConsumer):
-    # Se ejecuta cuando un cliente se conecta al WebSocket
-    # Une al cliente al grupo de actualizaciones de turnos
     async def connect(self):
         self.room_group_name = 'turns'
-        await self.channel_layer.group_add(
-            self.room_group_name,
-            self.channel_name
-        )
+        await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
-        await self.send_current_turn()
+        await self.send_all_turns()
 
-    # Se ejecuta cuando el cliente se desconecta
-    # Remueve al cliente del grupo de actualizaciones
     async def disconnect(self, close_code):
-        await self.channel_layer.group_discard(
-            self.room_group_name,
-            self.channel_name
-        )
+        await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
 
-    # Recibe mensajes del cliente WebSocket
-    # Acciones: 'get_current', 'get_all', 'get_waiting', 'get_position'
     async def receive(self, text_data):
-        data = json.loads(text_data)
+        data   = json.loads(text_data)
         action = data.get('action')
-
         if action == 'get_current':
             await self.send_current_turn()
         elif action == 'get_all':
@@ -38,137 +23,100 @@ class TurnConsumer(AsyncWebsocketConsumer):
         elif action == 'get_waiting':
             await self.send_waiting_turns()
         elif action == 'get_position':
-            user_turn = data.get('user_turn')
-            await self.send_user_position(user_turn)
+            await self.send_user_position(data.get('user_turn'))
 
-    # Consulta y envia el turno actualmente en atencion (status: calling)
     async def send_current_turn(self):
-        from turns.models import Turn
-        turn = await self.get_current_turn()
-        if turn:
-            await self.send(text_data=json.dumps({
-                'type': 'current_turn',
-                'number': turn['number'],
-                'status': turn['status']
-            }))
-        else:
-            await self.send(text_data=json.dumps({
-                'type': 'current_turn',
-                'number': None,
-                'status': 'none'
-            }))
+        turn = await self._get_current_turn()
+        await self.send(text_data=json.dumps({
+            'type':   'current_turn',
+            'number': turn['number'] if turn else None,
+            'status': turn['status'] if turn else 'none'
+        }))
 
-    # Decorador para convertir consultas sincronas a asincronas
-    # Busca el primer turno con status 'calling'
-    @database_sync_to_async
-    def get_current_turn(self):
-        from turns.models import Turn
-        turn = Turn.objects.filter(status="called").first()
-        if turn:
-            return {'number': turn.number, 'status': turn.status}
-        return None
-
-    # Consulta y envia todos los turnos del dia actual
     async def send_all_turns(self):
-        turns = await self.get_all_turns_data()
-        await self.send(text_data=json.dumps({
-            'type': 'all_turns',
-            'turns': turns
-        }))
+        turns = await self._get_all_turns_data()
+        await self.send(text_data=json.dumps({'type': 'all_turns', 'turns': turns}))
 
-    # Decorador para convertir consultas sincronas a asincronas
-    # Obtiene todos los turnos del dia con tiempo de espera
-    @database_sync_to_async
-    def get_all_turns_data(self):
-        from turns.models import Turn
-        from django.utils import timezone
-        today = timezone.now().date()
-        turns = Turn.objects.filter(created_at__date=today).order_by('-created_at')
-        now = timezone.now()
-        data = []
-        for t in turns:
-            if t.status == 'waiting' or t.status == 'calling':
-                wait_minutes = int((now - t.created_at).total_seconds() / 60)
-                wait_time = f"{wait_minutes} min"
-            else:
-                wait_time = "-"
-            data.append({
-                "number": t.number,
-                "status": t.status,
-                "created_at": t.created_at.strftime('%Y-%m-%d %H:%M:%S'),
-                "wait_time": wait_time
-            })
-        return data
-
-    # Consulta y envia solo los turnos en espera (status: waiting)
     async def send_waiting_turns(self):
-        turns = await self.get_waiting_turns_data()
-        await self.send(text_data=json.dumps({
-            'type': 'waiting_turns',
-            'turns': turns,
-            'count': len(turns)
-        }))
+        turns = await self._get_waiting_turns_data()
+        await self.send(text_data=json.dumps({'type': 'waiting_turns', 'turns': turns, 'count': len(turns)}))
 
-    # Decorador para convertir consultas sincronas a asincronas
-    # Obtiene turnos con status 'waiting' ordenador por fecha
-    @database_sync_to_async
-    def get_waiting_turns_data(self):
-        from turns.models import Turn
-        from django.utils import timezone
-        turns = Turn.objects.filter(status="waiting").order_by('created_at')
-        now = timezone.now()
-        data = []
-        for t in turns:
-            wait_minutes = int((now - t.created_at).total_seconds() / 60)
-            data.append({
-                "number": t.number,
-                "status": t.status,
-                "wait_time": f"{wait_minutes} min"
-            })
-        return data
-
-    # Consulta y envia la posicion del turno del usuario en la cola
     async def send_user_position(self, user_turn):
         if not user_turn:
-            await self.send(text_data=json.dumps({
-                'type': 'user_position',
-                'position': -1,
-                'turns_ahead': -1,
-                'message': 'No turn assigned'
-            }))
+            await self.send(text_data=json.dumps({'type': 'user_position', 'position': -1, 'turns_ahead': -1, 'message': 'No turn assigned'}))
             return
+        data = await self._get_position_data(user_turn)
+        await self.send(text_data=json.dumps({'type': 'user_position', **data}))
 
-        position_data = await self.get_position_data(user_turn)
-        await self.send(text_data=json.dumps({
-            'type': 'user_position',
-            **position_data
-        }))
+    # ── Firestore helpers (wrapped as sync-in-thread for async context) ──
 
-    # Decorador para convertir consultas sincronas a asincronas
-    # Calcula posicion del turno del usuario: cantidad de turnos adelante + 1
     @database_sync_to_async
-    def get_position_data(self, user_turn):
-        from turns.models import Turn
-        user_turn_obj = Turn.objects.filter(number=user_turn).first()
-        if not user_turn_obj:
+    def _get_current_turn(self):
+        from .firebase_config import db
+        if not db:
+            return None
+        for doc in db.collection('turns').stream():
+            t = doc.to_dict()
+            if t and t.get('status') == 'called':
+                return {'number': t.get('number'), 'status': t.get('status')}
+        return None
+
+    @database_sync_to_async
+    def _get_all_turns_data(self):
+        from .firebase_config import db
+        from .views import _fmt_time, _fmt_datetime
+        if not db:
+            return []
+        data = []
+        for doc in db.collection('turns').stream():
+            t = doc.to_dict()
+            if not t:
+                continue
+            data.append({
+                'id':           doc.id,
+                'number':       t.get('number', ''),
+                'status':       t.get('status', ''),
+                'service_type': t.get('service_type', ''),
+                'sede':         t.get('sede', ''),
+                'created_at':   _fmt_time(t.get('created_at', '')),
+                'called_by':    t.get('called_by', ''),
+                'created_by':   t.get('created_by', ''),
+                'scheduled_for':_fmt_datetime(t.get('scheduled_for', ''))
+            })
+        data.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+        return data
+
+    @database_sync_to_async
+    def _get_waiting_turns_data(self):
+        from .firebase_config import db
+        if not db:
+            return []
+        data = []
+        for doc in db.collection('turns').stream():
+            t = doc.to_dict()
+            if t and t.get('status') == 'waiting':
+                data.append({'number': t.get('number'), 'status': 'waiting', 'sede': t.get('sede', '')})
+        data.sort(key=lambda x: x.get('number', ''))
+        return data
+
+    @database_sync_to_async
+    def _get_position_data(self, user_turn):
+        from .firebase_config import db
+        if not db:
+            return {'position': -1, 'turns_ahead': -1, 'message': 'Service unavailable'}
+        all_docs = list(db.collection('turns').stream())
+        all_turns = [doc.to_dict() for doc in all_docs if doc.to_dict()]
+        user_doc = next((t for t in all_turns if t.get('number') == user_turn), None)
+        if not user_doc:
             return {'position': -1, 'turns_ahead': -1, 'message': 'Turn not found'}
-
-        if user_turn_obj.status == "finished":
+        if user_doc.get('status') == 'finished':
             return {'position': 0, 'turns_ahead': 0, 'status': 'finished'}
+        waiting = sorted([t for t in all_turns if t.get('status') == 'waiting'], key=lambda t: t.get('created_at', ''))
+        idx = next((i for i, t in enumerate(waiting) if t.get('number') == user_turn), -1)
+        if idx == -1:
+            return {'position': -1, 'turns_ahead': -1, 'status': user_doc.get('status'), 'user_turn': user_turn}
+        return {'position': idx + 1, 'turns_ahead': idx, 'status': user_doc.get('status'), 'user_turn': user_turn}
 
-        turns_ahead = Turn.objects.filter(
-            created_at__lt=user_turn_obj.created_at,
-            status__in=["waiting", "calling"]
-        ).count()
-
-        return {
-            'position': turns_ahead + 1,
-            'turns_ahead': turns_ahead,
-            'status': user_turn_obj.status,
-            'user_turn': user_turn
-        }
-
-    # Recibe actualizaciones broadcastadas desde el servidor
-    # Notifica al cliente WebSocket sobre cambios en turnos
+    # Called by channel layer group_send from broadcast_turn_update()
     async def turn_update(self, event):
         await self.send(text_data=json.dumps(event['data']))
