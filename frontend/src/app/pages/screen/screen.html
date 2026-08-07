@@ -1,33 +1,78 @@
 <div class="screen-container">
+
+  <!-- ── Header bar ── -->
   <div class="header-bar">
-    <div class="header-left">Turnify Pro - Pantalla Digital</div>
+    <div class="header-left">
+      <img src="/LOGO.png" alt="Logo" class="header-logo" />
+      <span class="header-title">Turnify Pro</span>
+    </div>
     <div class="header-right">
-      <div class="stats-display">En espera: <span id="waitingCount">{{ waitingCount }}</span></div>
-      <div class="clock-display"><span id="timer">{{ timer }}</span></div>
-    </div>
-  </div>
-
-  <div class="main-content">
-    <div class="calling-section">
-      <div class="calling-label">Atendiendo</div>
-      <p class="calling-number" id="currentNumber">{{ currentTurn?.number || '---' }}</p>
-      <p style="color: white; font-size: 1.2rem; margin-top: 1rem;" *ngIf="currentTurn?.called_by">
-        Atendido por: {{ currentTurn.called_by }}
-      </p>
-      <p style="color: white; font-size: 1rem; margin-top: 0.5rem;" *ngIf="currentTurn?.sede">
-        Sede: {{ currentTurn.sede }}
-      </p>
-    </div>
-
-    <div class="next-section">
-      <div class="next-label">Próximos a ser llamados</div>
-      <div class="next-turns-display" id="nextTurnsDisplay">
-        <div class="empty-state" *ngIf="nextTurns.length === 0">Sin turnos esperando</div>
-        <div class="next-turn-number" *ngFor="let turn of nextTurns">
-          <div>{{ turn.number }}</div>
-          <div style="font-size: 0.8rem; color: #64748b; margin-top: 0.5rem;" *ngIf="turn.sede">{{ turn.sede }}</div>
-        </div>
+      <div class="stat-chip">
+        <span class="stat-dot"></span>
+        En espera: <strong>{{ waitingCount }}</strong>
+      </div>
+      <div class="clock-block">
+        <div class="clock-time">{{ timer }}</div>
+        <div class="clock-date">{{ dateLabel }}</div>
       </div>
     </div>
   </div>
+
+  <!-- ── Main ── -->
+  <div class="main-content">
+
+    <!-- Turno en atención -->
+    <div class="calling-section">
+      <div class="calling-label">TURNO EN ATENCIÓN</div>
+
+      @if (currentTurn) {
+        <div class="calling-number-wrap">
+          <div class="calling-number">{{ currentTurn.number }}</div>
+        </div>
+        @if (currentTurn.sede) {
+          <div class="calling-meta">
+            <span class="meta-chip sede-chip">📍 {{ currentTurn.sede }}</span>
+          </div>
+        }
+        @if (currentTurn.called_by) {
+          <div class="calling-meta">
+            <span class="meta-chip emp-chip">👤 {{ currentTurn.called_by }}</span>
+          </div>
+        }
+      } @else {
+        <div class="calling-number-wrap no-turn">
+          <div class="calling-number empty-num">---</div>
+        </div>
+        <p class="no-turn-sub">Sin turno en atención</p>
+      }
+    </div>
+
+    <!-- Próximos turnos -->
+    <div class="next-section">
+      <div class="next-label">PRÓXIMOS EN COLA</div>
+      <div class="next-turns-display">
+        @if (nextTurns.length === 0) {
+          <div class="empty-state">Sin turnos en espera</div>
+        }
+        @for (turn of nextTurns; track turn.number) {
+          <div class="next-turn-card">
+            <div class="next-turn-number">{{ turn.number }}</div>
+            @if (turn.sede) {
+              <div class="next-turn-sede">{{ turn.sede }}</div>
+            }
+          </div>
+        }
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── Live indicator ── -->
+  <div class="footer-bar">
+    <div class="live-row">
+      <span class="live-dot-anim"></span>
+      <span class="live-text">Actualización en tiempo real</span>
+    </div>
+  </div>
+
 </div>
