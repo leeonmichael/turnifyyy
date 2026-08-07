@@ -479,6 +479,276 @@
   color: #991b1b;
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   ALL TURNS SECTION — Diseño premium
+═══════════════════════════════════════════════════════════════ */
+.all-turns-section {
+  background: white;
+  border-radius: 20px;
+  padding: 0;
+  margin-top: 2rem;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.07);
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+}
+
+/* Header */
+.all-turns-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 1.5rem 2rem;
+  background: linear-gradient(135deg, #f8faff 0%, #f0f4ff 100%);
+  border-bottom: 1.5px solid #e2e8f0;
+}
+
+.all-turns-title-group {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.all-turns-icon {
+  width: 46px;
+  height: 46px;
+  background: linear-gradient(135deg, #4a90f7, #2563eb);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.375rem;
+  box-shadow: 0 4px 12px rgba(74,144,247,0.3);
+  flex-shrink: 0;
+}
+
+.all-turns-title {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.all-turns-sub {
+  font-size: 0.8125rem;
+  color: #64748b;
+  margin: 0.2rem 0 0;
+  font-weight: 500;
+}
+
+/* Leyenda */
+.turns-legend {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.ld-waiting  { background: #4a90f7; }
+.ld-called   { background: #f59e0b; }
+.ld-finished { background: #10b981; }
+.ld-cancelled{ background: #ef4444; }
+
+/* Table container */
+.turns-table-container {
+  overflow-x: auto;
+}
+
+.turns-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+/* Cabecera de tabla */
+.turns-table thead tr {
+  background: #f8fafc;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+.turns-table th {
+  padding: 0.875rem 1.25rem;
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.th-num { width: 90px; }
+
+/* Filas */
+.turns-table tbody tr {
+  border-bottom: 1px solid #f1f5f9;
+  transition: background 0.15s;
+}
+
+.turns-table tbody tr:last-child { border-bottom: none; }
+.turns-table tbody tr:hover { background: #f8faff; }
+
+.turns-table td {
+  padding: 0.875rem 1.25rem;
+  vertical-align: middle;
+  color: #334155;
+}
+
+/* Número de turno — píldora coloreada */
+.td-num { width: 90px; }
+
+.turn-num-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 52px;
+  padding: 0.35rem 0.875rem;
+  border-radius: 30px;
+  font-size: 1rem;
+  font-weight: 800;
+  font-family: 'Inter', monospace;
+  letter-spacing: 0.03em;
+}
+
+.num-waiting  { background: #eff6ff; color: #2563eb; border: 1.5px solid #bfdbfe; }
+.num-called   { background: #fffbeb; color: #d97706; border: 1.5px solid #fde68a; }
+.num-finished { background: #f0fdf4; color: #059669; border: 1.5px solid #a7f3d0; }
+.num-cancelled{ background: #fef2f2; color: #dc2626; border: 1.5px solid #fecaca; }
+
+/* Tipo de servicio */
+.type-badge {
+  display: inline-block;
+  padding: 0.3rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.type-general  { background: #f1f5f9; color: #475569; }
+.type-pref     { background: #f5f3ff; color: #7c3aed; border: 1px solid #ddd6fe; }
+.type-emerg    { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+.type-vip      { background: #fefce8; color: #a16207; border: 1px solid #fef08a; }
+.type-virtual  { background: #ecfdf5; color: #059669; border: 1px solid #a7f3d0; }
+
+/* Sede */
+.td-sede { max-width: 200px; }
+.sede-text {
+  font-size: 0.85rem;
+  color: #475569;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
+/* Estado — badge con dot */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.875rem;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.status-badge .status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-waiting  { background: #eff6ff; color: #2563eb; }
+.status-waiting .status-dot { background: #4a90f7; animation: blink-dot 1.2s ease-in-out infinite; }
+
+.status-calling  { background: #fffbeb; color: #d97706; }
+.status-calling .status-dot { background: #f59e0b; animation: blink-dot 0.8s ease-in-out infinite; }
+
+.status-completed{ background: #f0fdf4; color: #059669; }
+.status-completed .status-dot { background: #10b981; }
+
+.status-cancelled{ background: #fef2f2; color: #dc2626; }
+.status-cancelled .status-dot { background: #ef4444; }
+
+/* Hora */
+.td-time {
+  font-family: 'Inter', monospace;
+  font-size: 0.875rem;
+  color: #64748b;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* Agente */
+.td-agent { white-space: nowrap; }
+
+.agent-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: #f0f7ff;
+  color: #2563eb;
+  border: 1px solid #bfdbfe;
+  border-radius: 20px;
+  padding: 0.3rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.no-agent {
+  color: #cbd5e1;
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+
+/* Fila coloreada sutil según estado */
+.row-called   { background: #fffdf5; }
+.row-finished { background: #f9fffe; }
+.row-cancelled{ opacity: 0.65; }
+
+/* Empty state */
+.empty-table-row td { padding: 0; }
+
+.empty-table-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 3.5rem 2rem;
+  color: #94a3b8;
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+
+.empty-table-icon { font-size: 2.75rem; }
+
+@keyframes blink-dot {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.25; }
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .employee-dashboard {

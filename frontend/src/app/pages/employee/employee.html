@@ -94,13 +94,30 @@
     </div>
   </div>
 
+  <!-- ── Todos los Turnos Recientes ── -->
   <div class="all-turns-section">
-    <h2 class="queue-title">Todos los Turnos Recientes</h2>
+
+    <div class="all-turns-header">
+      <div class="all-turns-title-group">
+        <div class="all-turns-icon">📋</div>
+        <div>
+          <h2 class="all-turns-title">Todos los Turnos Recientes</h2>
+          <p class="all-turns-sub">Últimos {{ turns.slice(0,20).length }} registros del sistema</p>
+        </div>
+      </div>
+      <div class="turns-legend">
+        <span class="legend-item"><span class="legend-dot ld-waiting"></span>En espera</span>
+        <span class="legend-item"><span class="legend-dot ld-called"></span>Llamando</span>
+        <span class="legend-item"><span class="legend-dot ld-finished"></span>Atendido</span>
+        <span class="legend-item"><span class="legend-dot ld-cancelled"></span>Cancelado</span>
+      </div>
+    </div>
+
     <div class="turns-table-container">
       <table class="turns-table">
         <thead>
           <tr>
-            <th>Numero</th>
+            <th class="th-num">Turno</th>
             <th>Tipo</th>
             <th>Sede</th>
             <th>Estado</th>
@@ -109,24 +126,85 @@
           </tr>
         </thead>
         <tbody>
-          <tr *ngFor="let turn of turns.slice(0, 20)">
-            <td class="turn-number">{{ turn.number }}</td>
-            <td>{{ turn.service_type }}</td>
-            <td>{{ turn.sede }}</td>
+          <tr *ngFor="let turn of turns.slice(0, 20); let i = index"
+              [class.row-waiting]="turn.status === 'waiting'"
+              [class.row-called]="turn.status === 'called'"
+              [class.row-finished]="turn.status === 'finished'"
+              [class.row-cancelled]="turn.status === 'cancelled'">
+
+            <!-- Número de turno -->
+            <td class="td-num">
+              <span class="turn-num-pill"
+                    [class.num-waiting]="turn.status === 'waiting'"
+                    [class.num-called]="turn.status === 'called'"
+                    [class.num-finished]="turn.status === 'finished'"
+                    [class.num-cancelled]="turn.status === 'cancelled'">
+                {{ turn.number }}
+              </span>
+            </td>
+
+            <!-- Tipo -->
+            <td>
+              <span class="type-badge"
+                    [class.type-general]="turn.service_type === 'general'"
+                    [class.type-pref]="turn.service_type === 'preferential'"
+                    [class.type-emerg]="turn.service_type === 'emergency'"
+                    [class.type-vip]="turn.service_type === 'vip'"
+                    [class.type-virtual]="turn.service_type === 'virtual'">
+                {{ turn.service_type === 'general' ? 'General' :
+                   turn.service_type === 'preferential' ? 'Preferencial' :
+                   turn.service_type === 'emergency' ? 'Emergencia' :
+                   turn.service_type === 'vip' ? 'VIP' :
+                   turn.service_type === 'virtual' ? 'Virtual' : turn.service_type }}
+              </span>
+            </td>
+
+            <!-- Sede -->
+            <td class="td-sede">
+              <span class="sede-text">{{ turn.sede || '—' }}</span>
+            </td>
+
+            <!-- Estado -->
             <td>
               <span class="status-badge"
                     [class.status-waiting]="turn.status === 'waiting'"
                     [class.status-calling]="turn.status === 'called'"
                     [class.status-completed]="turn.status === 'finished'"
                     [class.status-cancelled]="turn.status === 'cancelled'">
-                {{ turn.status === 'waiting' ? 'En espera' : turn.status === 'called' ? 'Llamando' : turn.status === 'finished' ? 'Atendido' : turn.status === 'cancelled' ? 'Cancelado' : turn.status }}
+                <span class="status-dot"></span>
+                {{ turn.status === 'waiting' ? 'En espera' :
+                   turn.status === 'called' ? 'Llamando' :
+                   turn.status === 'finished' ? 'Atendido' :
+                   turn.status === 'cancelled' ? 'Cancelado' : turn.status }}
               </span>
             </td>
-            <td>{{ turn.created_at }}</td>
-            <td>{{ turn.called_by || '-' }}</td>
+
+            <!-- Hora -->
+            <td class="td-time">{{ turn.created_at }}</td>
+
+            <!-- Atendido por -->
+            <td class="td-agent">
+              @if (turn.called_by) {
+                <span class="agent-chip">👤 {{ turn.called_by }}</span>
+              } @else {
+                <span class="no-agent">—</span>
+              }
+            </td>
           </tr>
+
+          @if (turns.length === 0) {
+            <tr>
+              <td colspan="6" class="empty-table-row">
+                <div class="empty-table-state">
+                  <div class="empty-table-icon">📭</div>
+                  <p>No hay turnos registrados aún</p>
+                </div>
+              </td>
+            </tr>
+          }
         </tbody>
       </table>
     </div>
+
   </div>
 </div>
