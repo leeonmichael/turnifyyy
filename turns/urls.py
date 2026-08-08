@@ -44,4 +44,6 @@ urlpatterns=[
     path('sedes/create/', views.create_sede, name='create_sede'),
     path('sedes/update/<str:sede_id>/', views.update_sede, name='update_sede'),
     path('sedes/delete/<str:sede_id>/', views.delete_sede, name='delete_sede'),
+    path('chatbot/', views.chatbot_view, name='chatbot'),
+    path('chatbot/proactive/', views.chatbot_proactive_view, name='chatbot_proactive'),
 ]

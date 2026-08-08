@@ -5,6 +5,17 @@
       <img src="/NOMBRE_Y_ESLOGAN.png" alt="Nombre y Eslogan" class="navbar-title-img" />
     </a>
 
+    <div class="navbar-clock">
+      <svg class="navbar-clock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"></circle>
+        <polyline points="12 6 12 12 16 14"></polyline>
+      </svg>
+      <div class="navbar-clock-text">
+        <span class="navbar-clock-time">{{ timer }}</span>
+        <span class="navbar-clock-date">{{ dateLabel }}</span>
+      </div>
+    </div>
+
     <div class="navbar-menu" *ngIf="isClient()">
       <a routerLink="/home" class="navbar-link">Inicio</a>
       <a routerLink="/profile" class="navbar-link">Perfil</a>

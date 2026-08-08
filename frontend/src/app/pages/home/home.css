@@ -4,15 +4,62 @@
   margin: 0 auto;
   padding: 1.5rem 1.25rem 3rem;
   min-height: 100vh;
-  background: #f1f5f9;
+  background: linear-gradient(135deg, #f0f8ff 0%, #e6f3ff 100%);
 }
 
 .staff-container { max-width: 900px; }
 
+/* Aviso proactivo del asistente */
+.assistant-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  background: white;
+  border: 1px solid #dbeafe;
+  border-left: 4px solid #2563eb;
+  border-radius: 12px;
+  padding: 0.875rem 1rem;
+  margin-top: 1rem;
+  box-shadow: 0 4px 16px rgba(30, 58, 138, 0.12);
+  animation: fadeInUp 0.35s ease-out;
+}
+
+.assistant-toast-icon {
+  font-size: 1.25rem;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.assistant-toast-text {
+  flex: 1;
+  font-size: 0.9rem;
+  color: #1e293b;
+  line-height: 1.5;
+}
+
+.assistant-toast-close {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0 0.125rem;
+}
+.assistant-toast-close:hover { color: #64748b; }
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 /* Welcome */
 .welcome-section { text-align: center; padding: 1.5rem 0 0.75rem; }
-.home-logo-img   { max-height: 85px; width: auto; margin: 0 auto 0.4rem; display: block; }
-.home-logo-eslogan { max-height: 50px; width: auto; margin: 0 auto 0.75rem; display: block; opacity: 0.85; }
+.home-logo-img   { max-height: 115px; width: auto; margin: 0 auto 0.4rem; display: block; filter: drop-shadow(0 4px 10px rgba(30, 58, 138, 0.2)); transition: transform 0.25s ease; }
+.home-logo-img:hover { transform: scale(1.12); }
+.home-logo-eslogan { max-height: 65px; width: auto; margin: 0 auto 0.75rem; display: block; opacity: 1; transition: transform 0.25s ease; }
+.home-logo-eslogan:hover { transform: scale(1.12); }
 .welcome-user    { display: inline-block; font-size: 0.9375rem; font-weight: 600; color: #334155; padding: 0.4rem 1.25rem; background: rgba(74,144,247,0.1); border-radius: 25px; }
 
 .welcome-title    { font-size: 2rem; font-weight: 800; color: #1e293b; margin: 0; }
@@ -62,13 +109,13 @@
 .get-turn-btn {
   display: block; width: 100%;
   padding: 1rem;
-  background: #4a90f7; color: white; border: none;
+  background: linear-gradient(135deg, #1e3a8a, #2563eb); color: white; border: none;
   border-radius: 10px; font-size: 1.05rem; font-weight: 700;
   cursor: pointer; transition: all 0.25s; font-family: inherit;
   box-shadow: 0 4px 14px rgba(74,144,247,0.3);
   margin-top: 0.75rem;
 }
-.get-turn-btn:hover    { background: #2563eb; transform: translateY(-2px); box-shadow: 0 6px 20px rgba(74,144,247,0.35); }
+.get-turn-btn:hover    { background: linear-gradient(135deg, #1e3a8a, #1d4ed8); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(74,144,247,0.35); }
 .get-turn-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
 
 /* ===== TURN HERO CARD ===== */

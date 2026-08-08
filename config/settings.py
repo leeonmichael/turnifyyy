@@ -1,7 +1,9 @@
 from pathlib import Path
 import os
+from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / '.env')
 
 SECRET_KEY = 'dev'
 DEBUG = True
@@ -81,3 +83,7 @@ CHANNEL_LAYERS = {
 
 CORS_ALLOW_WEBSOCKET_ORIGINS = True
 USE_TZ = False
+
+# ─── Asistente virtual (Gemini) ────────────────────────────────────────────
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
+GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-flash-latest')

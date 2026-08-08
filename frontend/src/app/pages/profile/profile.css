@@ -95,7 +95,7 @@
 }
 
 .btn-primary {
-  background: #4a90f7;
+  background: linear-gradient(135deg, #1e3a8a, #2563eb);
   color: white;
   border: none;
   padding: 0.875rem 2rem;
@@ -108,7 +108,7 @@
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: #2563eb;
+  background: linear-gradient(135deg, #1e3a8a, #1d4ed8);
   transform: translateY(-1px);
 }
 

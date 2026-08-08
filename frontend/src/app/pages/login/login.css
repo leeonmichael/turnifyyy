@@ -1,21 +1,194 @@
-.login-container {
+/* ── Layout general (3 columnas: marca | tarjeta | espacio libre sobre el fondo) ── */
+.login-page {
   min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background-image: url('/FONDO.png');
+  display: grid;
+  grid-template-columns: 1fr minmax(400px, 460px) 1fr;
+  background-image: url('/LOGIN_BG.png');
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
-  padding: 1.5rem;
   position: relative;
   overflow: hidden;
 }
 
+/* ── Panel izquierdo: marca + propuesta de valor ── */
+.login-hero {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 3rem 3rem 3rem 3.5rem;
+  overflow: hidden;
+  animation: fadeIn 0.6s ease-out;
+}
+
+.hero-glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(60px);
+  pointer-events: none;
+}
+
+.hero-glow-1 {
+  width: 320px;
+  height: 320px;
+  background: rgba(96, 165, 250, 0.25);
+  top: -80px;
+  left: -100px;
+}
+
+.hero-glow-2 {
+  width: 260px;
+  height: 260px;
+  background: rgba(37, 99, 235, 0.3);
+  bottom: -60px;
+  left: 40px;
+}
+
+.hero-dots {
+  position: absolute;
+  top: 1.5rem;
+  right: 1.5rem;
+  width: 220px;
+  height: 140px;
+  pointer-events: none;
+}
+
+.hero-wave {
+  position: absolute;
+  left: -20px;
+  bottom: -30px;
+  width: 105%;
+  height: 260px;
+  pointer-events: none;
+}
+
+.hero-brand {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 2.5rem;
+}
+
+.hero-logo {
+  height: 46px;
+  width: 46px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.5)) drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35));
+}
+
+.hero-brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.hero-brand-name {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: white;
+  letter-spacing: 0.02em;
+}
+
+.hero-brand-tagline {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #60a5fa;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.hero-title {
+  position: relative;
+  font-size: 2.5rem;
+  font-weight: 800;
+  color: white;
+  line-height: 1.2;
+  margin-bottom: 1.25rem;
+}
+
+.hero-title-accent {
+  color: #60a5fa;
+}
+
+.hero-desc {
+  position: relative;
+  font-size: 1rem;
+  color: #cbd5e1;
+  line-height: 1.6;
+  max-width: 380px;
+  margin-bottom: 2.5rem;
+}
+
+.hero-features {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.hero-feature {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.hero-feature-icon {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #2563eb, #3b82f6);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hero-feature-icon svg {
+  width: 22px;
+  height: 22px;
+  color: white;
+}
+
+.hero-feature-title {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: white;
+}
+
+.hero-feature-sub {
+  font-size: 0.8125rem;
+  color: #94a3b8;
+  margin-top: 0.125rem;
+}
+
+/* ── Centro: tarjeta de login ── */
+.login-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  position: relative;
+  z-index: 1;
+}
+
+.text-center {
+  text-align: center;
+}
+
 .logo-img {
-  max-height: 80px;
+  max-height: 90px;
   width: auto;
   margin-bottom: 1rem;
+  filter: drop-shadow(0 4px 10px rgba(30, 58, 138, 0.25));
+  transition: transform 0.25s ease, filter 0.25s ease;
+}
+
+.logo-img:hover {
+  transform: scale(1.12);
+  filter: drop-shadow(0 6px 14px rgba(30, 58, 138, 0.35));
 }
 
 .login-card {
@@ -52,13 +225,58 @@
   margin-bottom: 0.5rem;
 }
 
+/* ── Inputs con icono ── */
+.input-icon-wrap {
+  position: relative;
+  margin-bottom: 1.25rem;
+}
+
+.input-icon {
+  position: absolute;
+  left: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 19px;
+  height: 19px;
+  color: var(--gray-light);
+  pointer-events: none;
+}
+
+.input-icon-toggle {
+  position: absolute;
+  right: 0.875rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: none;
+  color: var(--gray-light);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: var(--transition);
+}
+
+.input-icon-toggle svg {
+  width: 19px;
+  height: 19px;
+}
+
+.input-icon-toggle:hover {
+  color: var(--accent);
+  background: #f1f5f9;
+}
+
 .login-card input[type="text"],
 .login-card input[type="password"],
 .login-card input[type="email"],
 .login-card input[type="tel"] {
   display: block;
   width: 100%;
-  padding: 0.875rem 1rem;
+  padding: 0.875rem 1rem 0.875rem 2.75rem;
   font-size: 0.9375rem;
   font-family: var(--font-primary);
   color: var(--dark);
@@ -66,7 +284,11 @@
   border: 1.5px solid #e2e8f0;
   border-radius: var(--radius-sm);
   transition: var(--transition);
-  margin-bottom: 1.25rem;
+  margin-bottom: 0;
+}
+
+.input-icon-wrap:has(.input-icon-toggle) input {
+  padding-right: 2.75rem;
 }
 
 .login-card input:focus {
@@ -76,6 +298,10 @@
   background: white;
 }
 
+.input-icon-wrap:focus-within .input-icon {
+  color: var(--accent);
+}
+
 .login-card .btn {
   width: 100%;
   padding: 0.875rem;
@@ -83,6 +309,21 @@
   font-weight: 700;
   margin-top: 0.5rem;
   border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, #1e3a8a, #2563eb);
+}
+
+.login-card .btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #1e3a8a, #1d4ed8);
+}
+
+.btn-arrow svg {
+  width: 18px;
+  height: 18px;
+  transition: transform 0.2s ease;
+}
+
+.btn-arrow:hover:not(:disabled) svg {
+  transform: translateX(3px);
 }
 
 .error-msg {
@@ -141,6 +382,17 @@
 .login-links a:hover {
   color: var(--accent-dark);
   text-decoration: underline;
+}
+
+/* ── Responsive: solo la tarjeta en pantallas medianas/pequeñas ── */
+@media (max-width: 1100px) {
+  .login-page {
+    grid-template-columns: 1fr;
+  }
+
+  .login-hero {
+    display: none;
+  }
 }
 
 @media (max-width: 480px) {

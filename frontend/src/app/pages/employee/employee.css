@@ -442,7 +442,7 @@
 }
 
 .call-turn-btn {
-  background: #4a90f7;
+  background: linear-gradient(135deg, #1e3a8a, #2563eb);
   color: white;
   border: none;
   padding: 0.625rem 1.25rem;
@@ -454,7 +454,7 @@
 }
 
 .call-turn-btn:hover {
-  background: #2563eb;
+  background: linear-gradient(135deg, #1e3a8a, #1d4ed8);
   transform: translateY(-1px);
 }
 

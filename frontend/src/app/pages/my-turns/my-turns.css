@@ -1,7 +1,7 @@
 :host {
   display: block;
   min-height: 100vh;
-  background: #f1f5f9;
+  background: linear-gradient(135deg, #f0f8ff 0%, #e6f3ff 100%);
 }
 
 .my-turns-container {
@@ -110,7 +110,7 @@
 
 .btn-primary-link {
   display: inline-block;
-  background: #4a90f7;
+  background: linear-gradient(135deg, #1e3a8a, #2563eb);
   color: white;
   padding: 0.75rem 2rem;
   border-radius: 10px;
@@ -120,7 +120,7 @@
 }
 
 .btn-primary-link:hover {
-  background: #2563eb;
+  background: linear-gradient(135deg, #1e3a8a, #1d4ed8);
 }
 
 /* History list */

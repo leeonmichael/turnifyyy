@@ -96,6 +96,7 @@ celerybeat.pid
 Thumbs.db
 
 # Environment-specific
+.env
 firebase_key.json
 turnifyyy.json
 venv/

@@ -16,6 +16,7 @@ export class Login implements OnInit {
   password = '';
   error = '';
   loading = false;
+  showPassword = false;
 
   constructor(
     private auth: AuthService,
@@ -26,6 +27,10 @@ export class Login implements OnInit {
     if (this.auth.isAuthenticated()) {
       this.navigateByRole(this.auth.getCurrentRole());
     }
+  }
+
+  togglePassword(): void {
+    this.showPassword = !this.showPassword;
   }
 
   navigateByRole(role: string | null): void {

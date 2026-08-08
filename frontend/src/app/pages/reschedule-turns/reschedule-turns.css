@@ -57,7 +57,7 @@
 }
 
 .turns-table th {
-  background: #4a90f7;
+  background: linear-gradient(135deg, #1e3a8a, #2563eb);
   color: white;
   font-weight: 600;
   font-size: 0.875rem;

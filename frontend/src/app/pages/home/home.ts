@@ -3,6 +3,7 @@ import { Router } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
 import { TurnService } from '../../services/turn.service';
 import { WebsocketService } from '../../services/websocket.service';
+import { ChatNotificationService } from '../../services/chat-notification.service';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -51,6 +52,10 @@ export class Home implements OnInit, OnDestroy {
   // Guard: only auto-reset if we've confirmed the turn at least once from the server
   private turnConfirmed = false;
 
+  // ---- Aviso proactivo del asistente ----
+  proactiveToastText: string | null = null;
+  private proactiveToastTimer: any;
+
   private destroy$ = new Subject<void>();
   private wsInterval: any;
   private httpPollInterval: any;
@@ -81,7 +86,8 @@ export class Home implements OnInit, OnDestroy {
     private ws: WebsocketService,
     private http: HttpClient,
     private router: Router,
-    private cdr: ChangeDetectorRef
+    private cdr: ChangeDetectorRef,
+    private chatNotify: ChatNotificationService
   ) {}
 
   ngOnInit(): void {
@@ -139,6 +145,7 @@ export class Home implements OnInit, OnDestroy {
     this.destroy$.complete();
     if (this.wsInterval) clearInterval(this.wsInterval);
     if (this.httpPollInterval) clearInterval(this.httpPollInterval);
+    if (this.proactiveToastTimer) clearTimeout(this.proactiveToastTimer);
   }
 
   private getHeaders(): HttpHeaders {
@@ -254,10 +261,39 @@ export class Home implements OnInit, OnDestroy {
       if (!this.warnAlarmPlayed) {
         this.warnAlarmPlayed = true;
         this.playWarningAlarm();
+        if (this.userTurn) this.triggerProactiveAssistant(this.userTurn, this.positionNum);
       }
     } else if (this.turnsAhead > 2) {
       this.warnAlarmPlayed = false;
     }
+  }
+
+  // Le pide al asistente de IA un aviso proactivo (una sola vez por turno)
+  // cuando quedan pocos turnos antes del propio, y lo deja tanto en un
+  // toast aquí como pendiente para cuando el usuario abra el chat.
+  private triggerProactiveAssistant(turnNumber: string, position: number): void {
+    if (this.chatNotify.hasNotifiedForTurn(turnNumber)) return;
+    this.chatNotify.markNotifiedForTurn(turnNumber);
+
+    this.http.post<{ message: string }>('/api/chatbot/proactive/', { turn_number: turnNumber, position }, { headers: this.getHeaders() })
+      .subscribe({
+        next: (res) => {
+          if (!res?.message) return;
+          this.chatNotify.addMessage(res.message);
+          this.showProactiveToast(res.message);
+        },
+        error: () => {} // No es crítico: si el asistente no está disponible, simplemente no hay aviso.
+      });
+  }
+
+  private showProactiveToast(text: string): void {
+    this.proactiveToastText = text;
+    this.cdr.detectChanges();
+    if (this.proactiveToastTimer) clearTimeout(this.proactiveToastTimer);
+    this.proactiveToastTimer = setTimeout(() => {
+      this.proactiveToastText = null;
+      this.cdr.detectChanges();
+    }, 8000);
   }
 
   private resetTurnState(): void {

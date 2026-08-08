@@ -1,4 +1,4 @@
-import { Component, Input, OnInit, inject } from '@angular/core';
+import { Component, Input, OnInit, OnDestroy, ChangeDetectorRef, inject } from '@angular/core';
 import { Router, RouterModule } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { AuthService } from '../../services/auth.service';
@@ -10,14 +10,35 @@ import { AuthService } from '../../services/auth.service';
   templateUrl: './navbar.html',
   styleUrl: './navbar.css'
 })
-export class Navbar implements OnInit {
+export class Navbar implements OnInit, OnDestroy {
   @Input() role: string = 'client';
   currentUser: any = null;
   router = inject(Router);
   auth = inject(AuthService);
+  cdr = inject(ChangeDetectorRef);
+
+  timer = '--:--:--';
+  dateLabel = '';
+  private clockInterval: any;
 
   ngOnInit(): void {
     this.currentUser = this.auth.getCurrentUser();
+
+    this.updateClock();
+    this.clockInterval = setInterval(() => {
+      this.updateClock();
+      this.cdr.detectChanges();
+    }, 1000);
+  }
+
+  ngOnDestroy(): void {
+    if (this.clockInterval) clearInterval(this.clockInterval);
+  }
+
+  private updateClock(): void {
+    const now = new Date();
+    this.timer = now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    this.dateLabel = now.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
   }
 
   logout(): void {

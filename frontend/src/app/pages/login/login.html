@@ -1,30 +1,147 @@
-<div class="login-container">
-  <div class="login-card">
-    <div class="text-center" style="margin-bottom: 2rem;">
-      <img src="/LOGO.png" alt="Logo Turnify" class="logo-img" />
-      <h2>Iniciar Sesión</h2>
-      <p class="subtitle text-muted">Bienvenido a Turnify Pro</p>
+<div class="login-page">
+
+  <!-- ── Panel izquierdo: marca + propuesta de valor ── -->
+  <div class="login-hero">
+    <div class="hero-glow hero-glow-1"></div>
+    <div class="hero-glow hero-glow-2"></div>
+
+    <svg class="hero-dots" viewBox="0 0 260 160" fill="none">
+      <circle cx="18" cy="20" r="2" fill="white" opacity="0.5"></circle>
+      <circle cx="60" cy="8" r="1.5" fill="white" opacity="0.35"></circle>
+      <circle cx="110" cy="34" r="2.5" fill="#60a5fa" opacity="0.55"></circle>
+      <circle cx="160" cy="14" r="1.5" fill="white" opacity="0.4"></circle>
+      <circle cx="200" cy="46" r="2" fill="white" opacity="0.3"></circle>
+      <circle cx="230" cy="18" r="1.5" fill="#60a5fa" opacity="0.5"></circle>
+      <circle cx="85" cy="70" r="1.5" fill="white" opacity="0.3"></circle>
+    </svg>
+
+    <svg class="hero-wave" viewBox="0 0 520 260" fill="none" preserveAspectRatio="none">
+      <path d="M-20 180 C 90 120, 160 220, 260 160 S 420 90, 540 150" stroke="#60a5fa" stroke-width="1.5" opacity="0.35"></path>
+      <path d="M-20 220 C 100 170, 170 250, 270 200 S 430 140, 540 195" stroke="white" stroke-width="1" opacity="0.18"></path>
+    </svg>
+
+    <div class="hero-brand">
+      <img src="/LOGO.png" alt="Logo" class="hero-logo" />
+      <div class="hero-brand-text">
+        <span class="hero-brand-name">TURNIFY</span>
+        <span class="hero-brand-tagline">TU TURNO, TU TIEMPO</span>
+      </div>
     </div>
-    <form (ngSubmit)="onSubmit()">
-      <div class="form-group">
-        <label>Usuario o Correo</label>
-        <input type="text" [(ngModel)]="username" name="username" class="form-control" placeholder="Ingresa tu usuario o correo" required />
-      </div>
-      <div class="form-group">
-        <label>Contraseña</label>
-        <input type="password" [(ngModel)]="password" name="password" class="form-control" placeholder="Ingresa tu contraseña" required />
+
+    <h1 class="hero-title">
+      Gestiona turnos,<br />
+      <span class="hero-title-accent">mejora experiencias.</span>
+    </h1>
+    <p class="hero-desc">
+      Turnify Pro es la solución inteligente para organizar, administrar y optimizar la atención en cualquier lugar.
+    </p>
+
+    <div class="hero-features">
+      <div class="hero-feature">
+        <div class="hero-feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+        </div>
+        <div>
+          <div class="hero-feature-title">Menos espera, más eficiencia</div>
+          <div class="hero-feature-sub">Optimiza el tiempo de atención.</div>
+        </div>
       </div>
 
-      <div *ngIf="error" class="alert alert-error">
-        {{ error }}
+      <div class="hero-feature">
+        <div class="hero-feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+            <circle cx="9" cy="7" r="4"></circle>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+          </svg>
+        </div>
+        <div>
+          <div class="hero-feature-title">Mejor experiencia para todos</div>
+          <div class="hero-feature-sub">Clientes satisfechos, siempre.</div>
+        </div>
       </div>
 
-      <button type="submit" class="btn btn-primary btn-lg" [disabled]="loading" style="margin-top: 0.5rem;">
-        {{ loading ? 'Ingresando...' : 'Ingresar' }}
-      </button>
-    </form>
-    <div class="login-links">
-      ¿No tienes cuenta? <a href="/register">Regístrate aquí</a>
+      <div class="hero-feature">
+        <div class="hero-feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="20" x2="18" y2="10"></line>
+            <line x1="12" y1="20" x2="12" y2="4"></line>
+            <line x1="6" y1="20" x2="6" y2="14"></line>
+          </svg>
+        </div>
+        <div>
+          <div class="hero-feature-title">Control total en tiempo real</div>
+          <div class="hero-feature-sub">Datos y métricas al instante.</div>
+        </div>
+      </div>
     </div>
   </div>
+
+  <!-- ── Centro: tarjeta de login ── -->
+  <div class="login-center">
+    <div class="login-card">
+      <div class="text-center" style="margin-bottom: 2rem;">
+        <img src="/LOGO.png" alt="Logo Turnify" class="logo-img" />
+        <h2>Iniciar Sesión</h2>
+        <p class="subtitle text-muted">Bienvenido a Turnify Pro</p>
+      </div>
+      <form (ngSubmit)="onSubmit()">
+        <div class="form-group">
+          <label>Usuario o Correo</label>
+          <div class="input-icon-wrap">
+            <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+              <circle cx="12" cy="7" r="4"></circle>
+            </svg>
+            <input type="text" [(ngModel)]="username" name="username" class="form-control" placeholder="Ingresa tu usuario o correo" required />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Contraseña</label>
+          <div class="input-icon-wrap">
+            <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+            <input [type]="showPassword ? 'text' : 'password'" [(ngModel)]="password" name="password" class="form-control" placeholder="Ingresa tu contraseña" required />
+            <button type="button" class="input-icon-toggle" (click)="togglePassword()" [attr.aria-label]="showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'">
+              @if (showPassword) {
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                  <line x1="1" y1="1" x2="23" y2="23"></line>
+                </svg>
+              } @else {
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+              }
+            </button>
+          </div>
+        </div>
+
+        <div *ngIf="error" class="alert alert-error">
+          {{ error }}
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-lg btn-arrow" [disabled]="loading" style="margin-top: 0.5rem;">
+          <span>{{ loading ? 'Ingresando...' : 'Ingresar' }}</span>
+          @if (!loading) {
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+              <polyline points="12 5 19 12 12 19"></polyline>
+            </svg>
+          }
+        </button>
+      </form>
+      <div class="login-links">
+        ¿No tienes cuenta? <a href="/register">Regístrate aquí</a>
+      </div>
+    </div>
+  </div>
+
 </div>

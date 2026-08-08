@@ -12,11 +12,23 @@ from asgiref.sync import async_to_sync
 import csv
 import io
 import re
-from django.http import HttpResponse
+import json
+from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
 from django.utils import timezone
 from datetime import date, datetime
 from django.contrib.auth.hashers import make_password, check_password
 from collections import Counter
+from .fs_helpers import (
+    get_turn_prefix, _fmt_time, _fmt_datetime, _fs_all_turns, _fs_all_users,
+    _fs_get_user, _get_employee_sede, generate_turn_fb, broadcast_turn_update,
+)
+from .turn_services import (
+    create_turn_service, cancel_own_turn_service, get_my_active_turn_service,
+    get_my_turns_service, get_position_service, get_sedes_service,
+    call_next_service, cancel_current_service, finish_current_service,
+    get_all_turns_service, get_statistics_service,
+)
+from .ai_assistant import get_chatbot_reply_stream, get_proactive_message, AIUnavailableError
 
 
 # ─── Page views ──────────────────────────────────────────────────────────────
@@ -48,118 +60,6 @@ def validate_numeric(value: str, min_length: int):
     return True, ""
 
 
-def get_turn_prefix(service_type: str) -> str:
-    return {'general': 'A', 'preferential': 'B', 'emergency': 'E', 'vip': 'V', 'virtual': 'W'}.get(service_type, 'A')
-
-
-def _fmt_time(iso_str: str) -> str:
-    if not iso_str:
-        return ''
-    try:
-        return datetime.fromisoformat(str(iso_str)).strftime('%H:%M')
-    except Exception:
-        return str(iso_str)[:5]
-
-
-def _fmt_datetime(iso_str: str) -> str:
-    if not iso_str:
-        return ''
-    try:
-        return datetime.fromisoformat(str(iso_str)).strftime('%d/%m/%Y %H:%M')
-    except Exception:
-        return str(iso_str)
-
-
-def _fs_all_turns():
-    """Fetch all turns from Firestore as list of dicts (with _doc_id)."""
-    if not db:
-        return []
-    result = []
-    for doc in db.collection('turns').stream():
-        d = doc.to_dict()
-        if d:
-            d['_doc_id'] = doc.id
-            result.append(d)
-    return result
-
-
-def _fs_all_users():
-    """Fetch all users from Firestore as list of dicts."""
-    if not db:
-        return []
-    result = []
-    for doc in db.collection('users').stream():
-        d = doc.to_dict()
-        if d:
-            result.append(d)
-    return result
-
-
-def _fs_get_user(username: str):
-    """Get a single user document by username."""
-    if not db or not username:
-        return None
-    doc = db.collection('users').document(username).get()
-    return doc.to_dict() if doc.exists else None
-
-
-def _get_employee_sede(username: str, role: str) -> str:
-    if role == 'employee' and username:
-        u = _fs_get_user(username)
-        return (u or {}).get('sede', '')
-    return ''
-
-
-def generate_turn_fb(prefix: str, sede: str) -> str:
-    """Generate next turn number for a given prefix and sede."""
-    if not db:
-        return f"{prefix}1"
-    try:
-        docs = db.collection('turns').where('sede', '==', sede).stream() if sede else db.collection('turns').stream()
-        pl = len(prefix)
-        nums = [
-            int(t[pl:])
-            for doc in docs
-            for t in [doc.to_dict().get('number', '') if doc.to_dict() else '']
-            if t.startswith(prefix) and len(t) > pl and t[pl:].isdigit()
-        ]
-        return f"{prefix}{max(nums) + 1}" if nums else f"{prefix}1"
-    except Exception:
-        return f"{prefix}1"
-
-
-def broadcast_turn_update():
-    """Read all turns from Firestore and push via WebSocket to all clients."""
-    if not db:
-        return
-    try:
-        turns_data = []
-        for doc in db.collection('turns').stream():
-            t = doc.to_dict()
-            if not t:
-                continue
-            turns_data.append({
-                'id':           doc.id,
-                'number':       t.get('number', ''),
-                'status':       t.get('status', 'waiting'),
-                'service_type': t.get('service_type', 'general'),
-                'sede':         t.get('sede', ''),
-                'created_at':   _fmt_time(t.get('created_at', '')),
-                'called_by':    t.get('called_by', ''),
-                'created_by':   t.get('created_by', ''),
-                'scheduled_for':_fmt_datetime(t.get('scheduled_for', ''))
-            })
-        turns_data.sort(key=lambda x: x.get('created_at', ''), reverse=True)
-        channel_layer = get_channel_layer()
-        if channel_layer:
-            async_to_sync(channel_layer.group_send)(
-                'turns',
-                {'type': 'turn_update', 'data': turns_data}
-            )
-    except Exception:
-        pass
-
-
 # ─── Auth ────────────────────────────────────────────────────────────────────
 
 @csrf_exempt
@@ -188,8 +88,8 @@ def register_user(request):
 
     if not password:
         return Response({'success': False, 'field': 'password', 'message': 'La contraseña es requerida'}, status=400)
-    if len(password) < 4:
-        return Response({'success': False, 'field': 'password', 'message': 'La contraseña debe tener mínimo 4 caracteres'}, status=400)
+    if not re.match(r'^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z\d]).{12,64}$', password):
+        return Response({'success': False, 'field': 'password', 'message': 'La contraseña debe tener mínimo 12 caracteres e incluir al menos 1 letra, 1 número y 1 símbolo'}, status=400)
     if not confirm_password:
         return Response({'success': False, 'field': 'confirm_password', 'message': 'Confirme su contraseña'}, status=400)
     if password != confirm_password:
@@ -743,82 +643,21 @@ def get_my_active_turn(request):
     token    = get_token_from_request(request)
     payload  = decode_access_token(token) if token else None
     username = (payload.get('username') or '') if payload else ''
-    if not username or not db:
-        return Response({'turn': None})
-
-    all_turns = _fs_all_turns()
-    active = [t for t in all_turns if t.get('created_by') == username and t.get('status') in ('waiting', 'called')]
-    if not active:
-        return Response({'turn': None})
-    active.sort(key=lambda t: t.get('created_at', ''), reverse=True)
-    t = active[0]
-    return Response({'turn': {
-        'id':           t.get('_doc_id', ''),
-        'number':       t.get('number', ''),
-        'status':       t.get('status', ''),
-        'service_type': t.get('service_type', ''),
-        'sede':         t.get('sede', ''),
-        'created_at':   _fmt_datetime(t.get('created_at', '')),
-    }})
+    data, status_code = get_my_active_turn_service(username)
+    return Response(data, status=status_code)
 
 
 @csrf_exempt
 @api_view(['POST'])
 def create_turn(request):
-    if not db:
-        return Response({'error': 'Servicio no disponible'}, status=503)
-
     service_type = request.data.get('service_type', 'general')
     sede         = request.data.get('sede', 'MOSQUERA')
     token        = get_token_from_request(request)
     payload      = decode_access_token(token) if token else None
     user_name    = (payload.get('username') or '') if payload else ''
 
-    # Prevent duplicate active turns
-    if user_name:
-        all_turns = _fs_all_turns()
-        existing = next(
-            (t for t in all_turns if t.get('created_by') == user_name and t.get('status') in ('waiting', 'called')),
-            None
-        )
-        if existing:
-            return Response({
-                'error':           'Ya tienes un turno activo',
-                'existing_number': existing.get('number', ''),
-                'existing_sede':   existing.get('sede', '')
-            }, status=400)
-
-    prefix = get_turn_prefix(service_type)
-    number = generate_turn_fb(prefix, sede)
-
-    client_data = {}
-    if user_name:
-        u = _fs_get_user(user_name)
-        if u:
-            client_data = {
-                'username':      user_name,
-                'full_name':     u.get('full_name', ''),
-                'cedula':        u.get('cedula', ''),
-                'email':         u.get('email', ''),
-                'phone':         u.get('phone', ''),
-                'document_type': u.get('document_type', ''),
-                'role':          u.get('role', '')
-            }
-
-    db.collection('turns').add({
-        'number':        number,
-        'status':        'waiting',
-        'service_type':  service_type,
-        'sede':          sede,
-        'client_data':   client_data,
-        'created_by':    user_name,
-        'called_by':     '',
-        'created_at':    timezone.now().isoformat(),
-        'finished_at':   '',
-        'scheduled_for': '',
-    })
-    broadcast_turn_update()
-    return Response({'number': number})
+    data, status_code = create_turn_service(user_name, service_type, sede)
+    return Response(data, status=status_code)
 
 
 @csrf_exempt
@@ -826,35 +665,14 @@ def create_turn(request):
 @jwt_required
 @role_required('admin', 'employee')
 def call_next(request):
-    if not db:
-        return Response({'message': 'Servicio no disponible'}, status=503)
-
     service_type  = request.data.get('service_type', '')
     token         = get_token_from_request(request)
     payload       = decode_access_token(token) if token else None
     called_by     = (payload.get('username') or '') if payload else ''
     calling_role  = (payload.get('role')     or '') if payload else ''
-    employee_sede = _get_employee_sede(called_by, calling_role)
 
-    all_turns = _fs_all_turns()
-    waiting = [t for t in all_turns if t.get('status') == 'waiting']
-    if employee_sede:
-        waiting = [t for t in waiting if t.get('sede') == employee_sede]
-    if service_type:
-        waiting = [t for t in waiting if t.get('service_type') == service_type]
-    waiting.sort(key=lambda t: t.get('created_at', ''))
-
-    if not waiting:
-        return Response({'message': 'No turns waiting'}, status=200)
-
-    turn = waiting[0]
-    db.collection('turns').document(turn['_doc_id']).update({
-        'status':    'called',
-        'called_by': called_by,
-        'called_at': timezone.now().isoformat()
-    })
-    broadcast_turn_update()
-    return Response({'number': turn.get('number')})
+    data, status_code = call_next_service(called_by, calling_role, service_type)
+    return Response(data, status=status_code)
 
 
 @csrf_exempt
@@ -866,24 +684,9 @@ def get_all_turns(request):
     payload  = decode_access_token(token) if token else None
     username = (payload.get('username') or '') if payload else ''
     role     = (payload.get('role')     or '') if payload else ''
-    sede     = _get_employee_sede(username, role)
 
-    all_turns = _fs_all_turns()
-    if sede:
-        all_turns = [t for t in all_turns if t.get('sede') == sede]
-    all_turns.sort(key=lambda t: t.get('created_at', ''), reverse=True)
-
-    return Response({'turns': [{
-        'id':           t.get('_doc_id', ''),
-        'number':       t.get('number', ''),
-        'status':       t.get('status', ''),
-        'service_type': t.get('service_type', ''),
-        'sede':         t.get('sede', ''),
-        'created_at':   _fmt_time(t.get('created_at', '')),
-        'called_by':    t.get('called_by', ''),
-        'created_by':   t.get('created_by', ''),
-        'scheduled_for':_fmt_datetime(t.get('scheduled_for', ''))
-    } for t in all_turns]})
+    data, status_code = get_all_turns_service(username, role)
+    return Response(data, status=status_code)
 
 
 @csrf_exempt
@@ -935,27 +738,9 @@ def finish_current_turn(request):
     payload  = decode_access_token(token) if token else None
     done_by  = (payload.get('username') or '') if payload else ''
     role     = (payload.get('role')     or '') if payload else ''
-    sede     = _get_employee_sede(done_by, role)
 
-    if not db:
-        return Response({'message': 'Servicio no disponible'}, status=503)
-
-    all_turns = _fs_all_turns()
-    called = [t for t in all_turns if t.get('status') == 'called']
-    if sede:
-        called = [t for t in called if t.get('sede') == sede]
-    called.sort(key=lambda t: t.get('created_at', ''), reverse=True)
-    if not called:
-        return Response({'message': 'No turn in progress'}, status=200)
-
-    turn = called[0]
-    db.collection('turns').document(turn['_doc_id']).update({
-        'status':      'finished',
-        'finished_at': timezone.now().isoformat(),
-        'finished_by': done_by
-    })
-    broadcast_turn_update()
-    return Response({'number': turn.get('number')})
+    data, status_code = finish_current_service(done_by, role)
+    return Response(data, status=status_code)
 
 
 @csrf_exempt
@@ -1029,27 +814,9 @@ def cancel_current(request):
     payload  = decode_access_token(token) if token else None
     username = (payload.get('username') or '') if payload else ''
     role     = (payload.get('role')     or '') if payload else ''
-    sede     = _get_employee_sede(username, role)
 
-    if not db:
-        return Response({'success': False, 'message': 'Servicio no disponible'}, status=503)
-
-    all_turns = _fs_all_turns()
-    called = [t for t in all_turns if t.get('status') == 'called']
-    if sede:
-        called = [t for t in called if t.get('sede') == sede]
-    called.sort(key=lambda t: t.get('created_at', ''), reverse=True)
-    if not called:
-        return Response({'success': False, 'message': 'No hay turno en progreso'}, status=404)
-
-    turn = called[0]
-    db.collection('turns').document(turn['_doc_id']).update({
-        'status':       'cancelled',
-        'cancelled_at': timezone.now().isoformat(),
-        'cancelled_by': username
-    })
-    broadcast_turn_update()
-    return Response({'success': True, 'message': 'Turno cancelado'})
+    data, status_code = cancel_current_service(username, role)
+    return Response(data, status=status_code)
 
 
 @csrf_exempt
@@ -1080,18 +847,8 @@ def reschedule_turn(request, turn_number):
 @api_view(['GET'])
 def get_user_position(request):
     turn_number = request.GET.get('turn_number', '')
-    if not turn_number or not db:
-        return Response({'position': None, 'turns_ahead': 0, 'status': None})
-
-    all_turns = _fs_all_turns()
-    waiting   = sorted([t for t in all_turns if t.get('status') == 'waiting'], key=lambda t: t.get('created_at', ''))
-    position  = next((i + 1 for i, t in enumerate(waiting) if t.get('number') == turn_number), None)
-    turn_doc  = next((t for t in all_turns if t.get('number') == turn_number), None)
-    return Response({
-        'position':    position,
-        'turns_ahead': max(0, position - 1) if position else 0,
-        'status':      turn_doc.get('status') if turn_doc else None
-    })
+    data, status_code = get_position_service(turn_number)
+    return Response(data, status=status_code)
 
 
 @csrf_exempt
@@ -1178,16 +935,8 @@ def reset_turns(request):
 @csrf_exempt
 @api_view(['GET'])
 def get_statistics(request):
-    if not db:
-        return Response({'total': 0, 'waiting': 0, 'called': 0, 'finished': 0, 'cancelled': 0})
-    all_turns = _fs_all_turns()
-    return Response({
-        'total':     len(all_turns),
-        'waiting':   sum(1 for t in all_turns if t.get('status') == 'waiting'),
-        'called':    sum(1 for t in all_turns if t.get('status') == 'called'),
-        'finished':  sum(1 for t in all_turns if t.get('status') == 'finished'),
-        'cancelled': sum(1 for t in all_turns if t.get('status') == 'cancelled'),
-    })
+    data, status_code = get_statistics_service()
+    return Response(data, status=status_code)
 
 
 @csrf_exempt
@@ -1260,26 +1009,8 @@ def my_turns(request):
     payload  = decode_access_token(token) if token else None
     username = payload.get('username', '') if payload else ''
 
-    if not username or not db:
-        return Response({'turns': []})
-
-    all_turns  = _fs_all_turns()
-    user_turns = sorted(
-        [t for t in all_turns if t.get('created_by') == username],
-        key=lambda t: t.get('created_at', ''),
-        reverse=True
-    )
-
-    return Response({'turns': [{
-        'id':           t.get('_doc_id', ''),
-        'number':       t.get('number', ''),
-        'status':       t.get('status', ''),
-        'service_type': t.get('service_type', ''),
-        'sede':         t.get('sede', '') or 'N/A',
-        'created_at':   _fmt_datetime(t.get('created_at', '')),
-        'finished_at':  _fmt_datetime(t.get('finished_at', '')) or None,
-        'scheduled_for':_fmt_datetime(t.get('scheduled_for', '')) or None,
-    } for t in user_turns]})
+    data, status_code = get_my_turns_service(username)
+    return Response(data, status=status_code)
 
 
 # ─── Sedes ───────────────────────────────────────────────────────────────────
@@ -1287,15 +1018,8 @@ def my_turns(request):
 @csrf_exempt
 @api_view(['GET'])
 def get_sedes(request):
-    if not db:
-        return Response({'sedes': []})
-    sedes = []
-    for doc in db.collection('sedes').stream():
-        d = doc.to_dict()
-        if d and d.get('is_active', True):
-            sedes.append({'id': doc.id, 'name': d.get('name', ''), 'city': d.get('city', ''), 'address': d.get('address', ''), 'is_active': True})
-    sedes.sort(key=lambda s: s.get('name', ''))
-    return Response({'sedes': sedes})
+    data, status_code = get_sedes_service()
+    return Response(data, status=status_code)
 
 
 @csrf_exempt
@@ -1363,3 +1087,72 @@ def delete_sede(request, sede_id):
     name = (doc.to_dict() or {}).get('name', str(sede_id))
     db.collection('sedes').document(str(sede_id)).update({'is_active': False, 'updated_at': timezone.now().isoformat()})
     return Response({'success': True, 'message': f'Sede {name} eliminada correctamente'})
+
+
+# ─── Asistente virtual (chatbot) ──────────────────────────────────────────────
+
+@csrf_exempt
+@jwt_required
+def chatbot_view(request):
+    """Vista Django simple (no DRF) porque necesita StreamingHttpResponse
+    para transmitir la respuesta del asistente palabra por palabra en vez
+    de esperar a que Gemini termine de generar todo el texto."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Método no permitido'}, status=405)
+
+    payload  = request.jwt_payload
+    username = payload.get('username', '')
+    role     = payload.get('role', 'client')
+
+    try:
+        body = json.loads(request.body or b'{}')
+    except (ValueError, TypeError):
+        body = {}
+    message = (body.get('message') or '').strip()
+    history = body.get('history') or []
+
+    if not message:
+        return JsonResponse({'error': 'Mensaje vacío'}, status=400)
+
+    gen = get_chatbot_reply_stream(message=message, history=history, username=username, role=role)
+
+    ai_unavailable_response = JsonResponse({
+        'error': 'ai_unavailable',
+        'message': 'El asistente de IA no está disponible en este momento. '
+                   'Intenta de nuevo más tarde o usa las opciones del menú.',
+    }, status=503)
+
+    try:
+        first_event = next(gen)
+    except AIUnavailableError:
+        return ai_unavailable_response
+    except StopIteration:
+        return ai_unavailable_response
+
+    def event_stream():
+        yield json.dumps(first_event) + '\n'
+        for event in gen:
+            yield json.dumps(event) + '\n'
+
+    return StreamingHttpResponse(event_stream(), content_type='application/x-ndjson')
+
+
+@csrf_exempt
+@api_view(['POST'])
+@jwt_required
+def chatbot_proactive_view(request):
+    """El frontend la llama cuando detecta que al turno del usuario le
+    quedan pocos turnos por delante (home.ts, junto a la alarma de aviso),
+    para que el asistente le mande un mensaje proactivo por el chat."""
+    turn_number = (request.data.get('turn_number') or '').strip()
+    position    = request.data.get('position')
+
+    if not turn_number:
+        return Response({'error': 'turn_number requerido'}, status=400)
+
+    try:
+        message = get_proactive_message(turn_number, position)
+    except AIUnavailableError:
+        return Response({'error': 'ai_unavailable'}, status=503)
+
+    return Response({'message': message})

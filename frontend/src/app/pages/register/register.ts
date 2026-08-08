@@ -26,6 +26,8 @@ export class Register implements OnInit {
   error = '';
   errorField = '';
   loading = false;
+  showPassword = false;
+  showConfirmPassword = false;
 
   constructor(private auth: AuthService, private router: Router) {}
 
@@ -61,12 +63,12 @@ export class Register implements OnInit {
       this.focusError();
       return;
     }
-    // Reglas: 6-8 caracteres, 1 letra, 1 número y 1 símbolo.
+    // Reglas: mínimo 12 caracteres, 1 letra, 1 número y 1 símbolo.
     const pwd = this.password;
-    const pwdPattern = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z\d]).{6,8}$/;
+    const pwdPattern = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z\d]).{12,64}$/;
 
     if (!pwdPattern.test(pwd)) {
-      this.error = 'La contraseña debe tener 6-8 caracteres e incluir al menos 1 letra, 1 número y 1 símbolo';
+      this.error = 'La contraseña debe tener mínimo 12 caracteres e incluir al menos 1 letra, 1 número y 1 símbolo';
       this.errorField = 'password';
       this.focusError();
       return;

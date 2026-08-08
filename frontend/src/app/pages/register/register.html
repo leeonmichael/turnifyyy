@@ -1,89 +1,269 @@
-<div class="register-container">
-  <div class="login-card">
-    <div class="text-center" style="margin-bottom: 2rem;">
-      <img src="/LOGO.png" alt="Logo Turnify" class="logo-img" />
-      <h2>Crear Cuenta</h2>
-      <p class="subtitle text-muted">Regístrate como cliente en Turnify Pro</p>
+<div class="register-page">
+
+  <!-- ── Panel izquierdo: marca + propuesta de valor ── -->
+  <div class="register-hero">
+    <div class="hero-glow hero-glow-1"></div>
+    <div class="hero-glow hero-glow-2"></div>
+
+    <svg class="hero-dots" viewBox="0 0 260 160" fill="none">
+      <circle cx="18" cy="20" r="2" fill="white" opacity="0.5"></circle>
+      <circle cx="60" cy="8" r="1.5" fill="white" opacity="0.35"></circle>
+      <circle cx="110" cy="34" r="2.5" fill="#60a5fa" opacity="0.55"></circle>
+      <circle cx="160" cy="14" r="1.5" fill="white" opacity="0.4"></circle>
+      <circle cx="200" cy="46" r="2" fill="white" opacity="0.3"></circle>
+      <circle cx="230" cy="18" r="1.5" fill="#60a5fa" opacity="0.5"></circle>
+      <circle cx="85" cy="70" r="1.5" fill="white" opacity="0.3"></circle>
+    </svg>
+
+    <svg class="hero-wave" viewBox="0 0 520 260" fill="none" preserveAspectRatio="none">
+      <path d="M-20 180 C 90 120, 160 220, 260 160 S 420 90, 540 150" stroke="#60a5fa" stroke-width="1.5" opacity="0.35"></path>
+      <path d="M-20 220 C 100 170, 170 250, 270 200 S 430 140, 540 195" stroke="white" stroke-width="1" opacity="0.18"></path>
+    </svg>
+
+    <div class="hero-brand">
+      <img src="/LOGO.png" alt="Logo" class="hero-logo" />
+      <div class="hero-brand-text">
+        <span class="hero-brand-name">TURNIFY</span>
+        <span class="hero-brand-tagline">TU TURNO, TU TIEMPO</span>
+      </div>
     </div>
-    <form (ngSubmit)="onSubmit()">
-      <div class="form-row">
-        <div class="form-group">
-          <label>Nombre Completo</label>
-          <input type="text" [(ngModel)]="full_name" name="full_name" class="form-control" placeholder="Nombre completo" required />
-        </div>
-        <div class="form-group">
-          <label>Tipo de Documento</label>
-          <select [(ngModel)]="document_type" name="document_type" class="form-control form-select">
-            <option value="CC">Cédula de Ciudadanía</option>
-            <option value="CE">Cédula de Extranjería</option>
-            <option value="PA">Pasaporte</option>
-            <option value="NIT">NIT</option>
-          </select>
-        </div>
-      </div>
 
-      <div class="form-row">
-        <div class="form-group">
-          <label>Número de Documento</label>
-          <input type="text" [(ngModel)]="cedula" name="cedula" class="form-control" placeholder="Mínimo 10 dígitos" required />
+    <h1 class="hero-title">
+      Crea tu cuenta<br />
+      <span class="hero-title-accent">y comienza a gestionar turnos de forma inteligente</span>
+    </h1>
+    <div class="hero-divider"></div>
+    <p class="hero-desc">
+      Únete a Turnify Pro y optimiza la atención al cliente con una plataforma ágil, segura y fácil de usar.
+    </p>
+
+    <div class="hero-features">
+      <div class="hero-feature">
+        <div class="hero-feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"></path>
+            <polyline points="9 12 11 14 15 10"></polyline>
+          </svg>
         </div>
-        <div class="form-group">
-          <label>Teléfono</label>
-          <input type="tel" [(ngModel)]="phone" name="phone" class="form-control" placeholder="Mínimo 10 dígitos" required />
+        <div>
+          <div class="hero-feature-title">Seguro y confiable</div>
+          <div class="hero-feature-sub">Protegemos tus datos y los de tus clientes.</div>
         </div>
       </div>
 
-      <div class="form-group">
-        <label>Correo Electrónico</label>
-        <input type="email" [(ngModel)]="email" name="email" class="form-control" placeholder="correo@ejemplo.com" required />
-      </div>
-
-      <div class="form-group">
-        <label>Nombre de Usuario</label>
-        <input type="text" [(ngModel)]="username" name="username" class="form-control" placeholder="Mínimo 3 caracteres" required autocomplete="username" />
-      </div>
-
-      <div class="form-group">
-        <label>Contraseña</label>
-        <input
-          type="password"
-          [(ngModel)]="password"
-          name="password"
-          class="form-control"
-          placeholder="Máximo 8 caracteres, incluye símbolo"
-          required
-          minlength="6"
-          maxlength="8"
-          autocomplete="new-password"
-          aria-describedby="password-hint"
-        />
-        <div id="password-hint" class="password-hint">
-          6-8 caracteres, mínimo 1 letra, 1 número y 1 símbolo (ej: ! @ #)
+      <div class="hero-feature">
+        <div class="hero-feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+          </svg>
+        </div>
+        <div>
+          <div class="hero-feature-title">Rápido y eficiente</div>
+          <div class="hero-feature-sub">Crea tu cuenta y comienza en minutos.</div>
         </div>
       </div>
 
-
-      <div class="form-group">
-        <label>Confirmar Contraseña</label>
-        <input type="password" [(ngModel)]="confirm_password" name="confirm_password" class="form-control" placeholder="Repite tu contraseña" required autocomplete="new-password" />
+      <div class="hero-feature">
+        <div class="hero-feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="20" x2="18" y2="10"></line>
+            <line x1="12" y1="20" x2="12" y2="4"></line>
+            <line x1="6" y1="20" x2="6" y2="14"></line>
+          </svg>
+        </div>
+        <div>
+          <div class="hero-feature-title">Todo en un solo lugar</div>
+          <div class="hero-feature-sub">Gestiona, analiza y mejora la experiencia de atención.</div>
+        </div>
       </div>
-
-      <div class="form-check">
-        <input type="checkbox" [(ngModel)]="accept_terms" name="accept_terms" id="accept_terms" class="form-check-input" />
-        <label for="accept_terms" class="form-check-label">Acepto términos y condiciones</label>
-      </div>
-
-      <div id="error-container" *ngIf="error" class="alert alert-error">
-        {{ error }}
-      </div>
-
-      <button type="submit" class="btn btn-primary btn-lg" [disabled]="loading">
-        {{ loading ? 'Registrando...' : 'Crear Cuenta' }}
-      </button>
-    </form>
-
-    <div class="login-links">
-      ¿Ya tienes cuenta? <a href="/login">Inicia Sesión aquí</a>
     </div>
   </div>
+
+  <!-- ── Centro: tarjeta de registro ── -->
+  <div class="register-center">
+    <div class="login-card">
+      <div class="text-center" style="margin-bottom: 1.5rem;">
+        <img src="/LOGO.png" alt="Logo Turnify" class="logo-img" />
+        <h2>Crear Cuenta</h2>
+        <p class="subtitle text-muted">Regístrate como cliente en <span class="brand-highlight">Turnify Pro</span></p>
+      </div>
+      <form (ngSubmit)="onSubmit()">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Nombre Completo</label>
+            <div class="input-icon-wrap">
+              <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                <circle cx="12" cy="7" r="4"></circle>
+              </svg>
+              <input type="text" [(ngModel)]="full_name" name="full_name" class="form-control" placeholder="Nombre completo" required />
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Tipo de Documento</label>
+            <div class="input-icon-wrap">
+              <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="5" width="20" height="14" rx="2"></rect>
+                <line x1="2" y1="10" x2="22" y2="10"></line>
+              </svg>
+              <select [(ngModel)]="document_type" name="document_type" class="form-control form-select">
+                <option value="CC">Cédula de Ciudadanía</option>
+                <option value="CE">Cédula de Extranjería</option>
+                <option value="PA">Pasaporte</option>
+                <option value="NIT">NIT</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Número de Documento</label>
+            <div class="input-icon-wrap">
+              <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+                <line x1="7" y1="9" x2="17" y2="9"></line>
+                <line x1="7" y1="13" x2="13" y2="13"></line>
+              </svg>
+              <input type="text" [(ngModel)]="cedula" name="cedula" class="form-control" placeholder="Mínimo 10 dígitos" required />
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Teléfono</label>
+            <div class="input-icon-wrap">
+              <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92Z"></path>
+              </svg>
+              <input type="tel" [(ngModel)]="phone" name="phone" class="form-control" placeholder="Mínimo 10 dígitos" required />
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Correo Electrónico</label>
+          <div class="input-icon-wrap">
+            <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="4" width="20" height="16" rx="2"></rect>
+              <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"></path>
+            </svg>
+            <input type="email" [(ngModel)]="email" name="email" class="form-control" placeholder="correo@ejemplo.com" required />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Nombre de Usuario</label>
+          <div class="input-icon-wrap">
+            <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+              <circle cx="12" cy="7" r="4"></circle>
+            </svg>
+            <input type="text" [(ngModel)]="username" name="username" class="form-control" placeholder="Mínimo 3 caracteres" required autocomplete="username" />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Contraseña</label>
+            <div class="input-icon-wrap">
+              <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+              </svg>
+              <input
+                [type]="showPassword ? 'text' : 'password'"
+                [(ngModel)]="password"
+                name="password"
+                class="form-control"
+                placeholder="Mínimo 12 caracteres"
+                required
+                minlength="12"
+                maxlength="64"
+                autocomplete="new-password"
+                aria-describedby="password-hint"
+              />
+              <button type="button" class="input-icon-toggle" (click)="showPassword = !showPassword" [attr.aria-label]="showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'">
+                @if (showPassword) {
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                    <line x1="1" y1="1" x2="23" y2="23"></line>
+                  </svg>
+                } @else {
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                }
+              </button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Confirmar Contraseña</label>
+            <div class="input-icon-wrap">
+              <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+              </svg>
+              <input
+                [type]="showConfirmPassword ? 'text' : 'password'"
+                [(ngModel)]="confirm_password"
+                name="confirm_password"
+                class="form-control"
+                placeholder="Repite tu contraseña"
+                required
+                autocomplete="new-password"
+              />
+              <button type="button" class="input-icon-toggle" (click)="showConfirmPassword = !showConfirmPassword" [attr.aria-label]="showConfirmPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'">
+                @if (showConfirmPassword) {
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                    <line x1="1" y1="1" x2="23" y2="23"></line>
+                  </svg>
+                } @else {
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                }
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div id="password-hint" class="password-hint">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="16" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+          </svg>
+          <span>Mínimo 12 caracteres, incluye 1 letra, 1 número y 1 símbolo (ej: ! @ #)</span>
+        </div>
+
+        <div class="form-check">
+          <input type="checkbox" [(ngModel)]="accept_terms" name="accept_terms" id="accept_terms" class="form-check-input" />
+          <label for="accept_terms" class="form-check-label">Acepto <a href="#" onclick="return false;">términos y condiciones</a></label>
+        </div>
+
+        <div id="error-container" *ngIf="error" class="alert alert-error">
+          {{ error }}
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-lg btn-arrow" [disabled]="loading">
+          @if (!loading) {
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="8.5" cy="7" r="4"></circle>
+              <line x1="20" y1="8" x2="20" y2="14"></line>
+              <line x1="17" y1="11" x2="23" y2="11"></line>
+            </svg>
+          }
+          <span>{{ loading ? 'Registrando...' : 'Crear Cuenta' }}</span>
+        </button>
+      </form>
+
+      <div class="login-links">
+        ¿Ya tienes cuenta? <a href="/login">Inicia Sesión aquí</a>
+      </div>
+    </div>
+  </div>
+
 </div>

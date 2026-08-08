@@ -3,7 +3,8 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
-import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { ChatNotificationService } from '../../services/chat-notification.service';
+import { HttpClient, HttpHeaders, HttpEventType, HttpDownloadProgressEvent } from '@angular/common/http';
 
 interface ChatMessage {
   id:        number;
@@ -40,20 +41,138 @@ export class Chatbot implements OnInit, AfterViewChecked {
 
   currentUser: any = null;
 
+  // ── Voz ──────────────────────────────────────────────────────────────
+  micSupported     = false;
+  speechSupported   = typeof window !== 'undefined' && 'speechSynthesis' in window;
+  isListening       = false;
+  voiceEnabled      = false;
+  micError: string | null = null;
+  private recognition: any = null;
+  private speechRecognitionCtor: any = null;
+
   constructor(
     private router: Router,
     private auth:   AuthService,
     private http:   HttpClient,
-    private cdr:    ChangeDetectorRef
+    private cdr:    ChangeDetectorRef,
+    private chatNotify: ChatNotificationService
   ) {}
 
   ngOnInit(): void {
     this.currentUser = this.auth.getCurrentUser();
+    this.voiceEnabled = localStorage.getItem('turnify_voice_enabled') === 'true';
+    this.setupSpeechRecognition();
+
     // Mensaje de bienvenida del bot
     const name = this.currentUser?.full_name?.split(' ')[0] || 'amigo/a';
     this.addBotMessage(
       `¡Hola${name ? ', ' + name : ''}! 👋 Soy el asistente virtual de Turnify. Estoy aquí para ayudarte a:\n\n• Agendar y gestionar tu turno\n• Resolver dudas sobre el proceso\n• Orientar a personas de la tercera edad\n\n¿En qué te puedo ayudar hoy?`
     );
+
+    // Avisos proactivos generados mientras el usuario no tenía el chat abierto
+    // (ver home.ts, se disparan cuando el turno está por ser llamado).
+    for (const pending of this.chatNotify.takePending()) {
+      this.addBotMessage(pending.text);
+    }
+  }
+
+  private setupSpeechRecognition(): void {
+    this.speechRecognitionCtor =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    this.micSupported = !!this.speechRecognitionCtor;
+  }
+
+  // Chrome se pone inestable si se reutiliza la misma instancia de
+  // SpeechRecognition entre varios start()/stop() (a veces "arranca" y
+  // vuelve a cortar sola casi de inmediato) — por eso se crea una instancia
+  // nueva cada vez que el usuario le da al micrófono.
+  private createRecognition(): any {
+    const recognition = new this.speechRecognitionCtor();
+    recognition.lang = 'es-ES';
+    recognition.continuous = true;
+    recognition.interimResults = false;
+
+    recognition.onresult = (event: any) => {
+      // En modo continuo, event.results va creciendo con cada frase — solo
+      // se toman las entradas nuevas desde resultIndex para no repetir texto.
+      let newText = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          newText += event.results[i][0].transcript;
+        }
+      }
+      if (newText) {
+        this.userInput = (this.userInput ? this.userInput.trimEnd() + ' ' : '') + newText.trim();
+        this.cdr.detectChanges();
+      }
+    };
+    recognition.onerror = (event: any) => {
+      this.isListening = false;
+      this.micError = this.describeMicError(event?.error);
+      this.cdr.detectChanges();
+    };
+    recognition.onend = () => {
+      this.isListening = false;
+      this.cdr.detectChanges();
+    };
+    return recognition;
+  }
+
+  private describeMicError(code: string): string | null {
+    switch (code) {
+      case 'not-allowed':
+      case 'service-not-allowed':
+        return 'No tengo permiso para usar el micrófono. Revisa el ícono de candado/cámara en la barra de direcciones de tu navegador y permite el acceso al micrófono para este sitio.';
+      case 'audio-capture':
+        return 'No se detectó ningún micrófono conectado en tu dispositivo.';
+      case 'network':
+        return 'Hubo un problema de conexión con el servicio de reconocimiento de voz. Intenta de nuevo.';
+      case 'no-speech':
+        return null; // No dijiste nada — no es realmente un error, no hace falta mostrar nada.
+      default:
+        return 'No se pudo activar el micrófono. Intenta de nuevo.';
+    }
+  }
+
+  toggleListening(): void {
+    if (!this.micSupported) return;
+    if (this.isListening) {
+      this.recognition?.stop();
+      this.isListening = false;
+      return;
+    }
+    this.micError = null;
+    this.recognition = this.createRecognition();
+    try {
+      this.recognition.start();
+      this.isListening = true;
+    } catch {
+      this.isListening = false;
+      this.micError = 'No se pudo activar el micrófono. Intenta de nuevo.';
+    }
+    this.cdr.detectChanges();
+  }
+
+  toggleVoice(): void {
+    this.voiceEnabled = !this.voiceEnabled;
+    localStorage.setItem('turnify_voice_enabled', String(this.voiceEnabled));
+    if (!this.voiceEnabled) {
+      window.speechSynthesis?.cancel();
+    }
+  }
+
+  private speak(text: string): void {
+    if (!this.voiceEnabled || !this.speechSupported) return;
+    try {
+      window.speechSynthesis.cancel();
+      const clean = text.replace(/[*_#•\[\]]/g, '').replace(/https?:\/\/\S+/g, '');
+      const utterance = new SpeechSynthesisUtterance(clean);
+      utterance.lang = 'es-ES';
+      utterance.rate = 1;
+      window.speechSynthesis.speak(utterance);
+    } catch {
+      // Si falla la síntesis de voz, simplemente no se lee en voz alta.
+    }
   }
 
   ngAfterViewChecked(): void {
@@ -72,6 +191,7 @@ export class Chatbot implements OnInit, AfterViewChecked {
   private addBotMessage(text: string): void {
     this.messages.push({ id: ++this.msgId, role: 'bot', text, time: this.now() });
     this.cdr.detectChanges();
+    this.speak(text);
   }
 
   private addUserMessage(text: string): void {
@@ -97,22 +217,72 @@ export class Chatbot implements OnInit, AfterViewChecked {
     this.isTyping = true;
     this.cdr.detectChanges();
 
-    // ── PUNTO DE INTEGRACIÓN DE IA ──────────────────────────────────────
-    // Aquí se conectará el modelo de IA (Claude, GPT, Gemini, etc.)
-    // Por ahora usa respuestas locales como fallback.
-    // Para integrar IA, reemplaza este bloque con una llamada HTTP:
-    //
-    //   this.http.post('/api/chatbot/', { message: userText, user: this.currentUser })
-    //     .subscribe({ next: (res: any) => { this.showBotReply(res.reply); }, error: () => { ... } });
-    //
-    // ────────────────────────────────────────────────────────────────────
+    const history = this.messages
+      .filter(m => !m.typing)
+      .slice(-10)
+      .map(m => ({ role: m.role, text: m.text }));
 
-    const delay = 900 + Math.random() * 600;
-    setTimeout(() => {
-      const reply = this.generateLocalResponse(userText);
-      this.isTyping = false;
-      this.addBotMessage(reply);
-    }, delay);
+    let botMsg: ChatMessage | null = null;
+    let processedLength = 0;
+    let hadStreamError = false;
+
+    this.http.post('/api/chatbot/', { message: userText, history }, {
+      observe: 'events',
+      responseType: 'text',
+      reportProgress: true,
+    }).subscribe({
+      next: (event) => {
+        if (event.type === HttpEventType.DownloadProgress) {
+          const partial = (event as HttpDownloadProgressEvent).partialText || '';
+          const newText = partial.slice(processedLength);
+          processedLength = partial.length;
+          if (!newText) return;
+
+          for (const line of newText.split('\n')) {
+            if (!line.trim()) continue;
+            let evt: any;
+            try { evt = JSON.parse(line); } catch { continue; }
+
+            if (evt.type === 'chunk') {
+              if (!botMsg) {
+                this.isTyping = false;
+                botMsg = { id: ++this.msgId, role: 'bot', text: '', time: this.now() };
+                this.messages.push(botMsg);
+              }
+              botMsg.text += evt.text;
+              this.cdr.detectChanges();
+            } else if (evt.type === 'error') {
+              hadStreamError = true;
+            }
+          }
+        } else if (event.type === HttpEventType.Response) {
+          this.isTyping = false;
+          if (botMsg) {
+            const finalMsg = botMsg;
+            if (hadStreamError && !finalMsg.text) {
+              this.messages = this.messages.filter(m => m !== finalMsg);
+              this.addBotMessage(this.generateLocalResponse(userText));
+            } else {
+              if (hadStreamError) finalMsg.text += '\n\n_(se interrumpió la conexión con el asistente)_';
+              this.speak(finalMsg.text);
+            }
+          } else {
+            this.addBotMessage(this.generateLocalResponse(userText));
+          }
+          this.cdr.detectChanges();
+        }
+      },
+      error: () => {
+        // Asistente de IA no disponible (sin GEMINI_API_KEY configurada, red caída, etc.)
+        // -> usar respuestas locales como respaldo.
+        const delay = 500 + Math.random() * 400;
+        setTimeout(() => {
+          this.isTyping = false;
+          if (!botMsg) this.addBotMessage(this.generateLocalResponse(userText));
+          this.cdr.detectChanges();
+        }, delay);
+      }
+    });
   }
 
   // Respuestas locales de fallback (reemplazar con IA real)

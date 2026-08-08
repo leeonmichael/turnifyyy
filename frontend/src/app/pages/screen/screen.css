@@ -29,9 +29,15 @@
 }
 
 .header-logo {
-  height: 44px;
+  height: 60px;
   width: auto;
-  filter: drop-shadow(0 0 8px rgba(74,144,247,0.4));
+  filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.6)) drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35));
+  transition: transform 0.25s ease, filter 0.25s ease;
+}
+
+.header-logo:hover {
+  transform: scale(1.12);
+  filter: drop-shadow(0 0 7px rgba(255, 255, 255, 0.85)) drop-shadow(0 3px 10px rgba(0, 0, 0, 0.45));
 }
 
 .header-title {

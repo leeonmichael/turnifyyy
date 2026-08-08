@@ -2,6 +2,14 @@
 @if (currentUser?.role === 'client' || !currentUser) {
   <div class="home-container">
 
+    @if (proactiveToastText) {
+      <div class="assistant-toast">
+        <span class="assistant-toast-icon">🤖</span>
+        <div class="assistant-toast-text">{{ proactiveToastText }}</div>
+        <button class="assistant-toast-close" (click)="proactiveToastText = null" aria-label="Cerrar">×</button>
+      </div>
+    }
+
     <!-- Logo + Bienvenida -->
     @if (currentUser) {
       <div class="welcome-section">
