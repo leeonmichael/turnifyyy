@@ -10,11 +10,11 @@
 
     <div class="bot-identity">
       <div class="bot-avatar">
-        <span class="bot-icon">🤖</span>
+        <img class="bot-icon" src="/avatar-ia.jpeg" alt="TURNITY">
         <span class="online-dot"></span>
       </div>
       <div class="bot-info">
-        <div class="bot-name">Asistente Turnify</div>
+        <div class="bot-name">TURNITY</div>
         <div class="bot-status">En línea · Responde al instante</div>
       </div>
     </div>
@@ -54,7 +54,7 @@
       <div class="msg-row" [class.msg-user]="msg.role === 'user'" [class.msg-bot]="msg.role === 'bot'">
 
         @if (msg.role === 'bot') {
-          <div class="msg-avatar-sm">🤖</div>
+          <div class="msg-avatar-sm"><img src="/avatar-ia.jpeg" alt="TURNITY"></div>
         }
 
         <div class="bubble" [class.bubble-bot]="msg.role === 'bot'" [class.bubble-user]="msg.role === 'user'">
@@ -74,7 +74,7 @@
     <!-- Typing indicator -->
     @if (isTyping) {
       <div class="msg-row msg-bot">
-        <div class="msg-avatar-sm">🤖</div>
+        <div class="msg-avatar-sm"><img src="/avatar-ia.jpeg" alt="TURNITY"></div>
         <div class="bubble bubble-bot typing-bubble">
           <span class="typing-dot"></span>
           <span class="typing-dot"></span>

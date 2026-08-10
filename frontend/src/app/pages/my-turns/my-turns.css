@@ -93,7 +93,10 @@
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .empty-icon {
-  font-size: 3.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #cbd5e1;
   margin-bottom: 1rem;
 }
 
@@ -218,7 +221,8 @@
 }
 
 .date-icon {
-  font-size: 0.875rem;
+  display: inline-flex;
+  align-items: center;
 }
 
 .rescheduled-banner {
@@ -234,7 +238,7 @@
   border-radius: 20px;
 }
 
-.reschedule-icon { font-size: 0.875rem; }
+.reschedule-icon { display: inline-flex; align-items: center; }
 
 /* Status column */
 .turn-status-col {
