@@ -39,8 +39,40 @@ export class Home implements OnInit, OnDestroy {
   userTurn: string | null = null;
   userTurnSede = '';
   userTurnStatus = '';        // 'waiting' | 'called' | 'finished' | 'cancelled'
+  userTurnServiceType = '';
   positionNum = 0;
   turnsAhead = 0;
+
+  // ---- Turno virtual: documentos + videollamada ----
+  requiredDocuments: any[] = [];
+  uploadedDocuments: any[] = [];
+  meetLink = '';
+  uploadingKey: string | null = null;
+  docUploadError = '';
+
+  // ---- Turno virtual: chat con el empleado ----
+  chatMessages: any[] = [];
+  chatInput = '';
+  sendingChat = false;
+
+  get isVirtualTurn(): boolean { return this.userTurnServiceType === 'virtual'; }
+  docStatusFor(key: string): any {
+    return this.uploadedDocuments.find((d: any) => d.key === key) || null;
+  }
+
+  get displayChatMessages(): any[] {
+    return this.chatMessages.map((m: any) => ({
+      ...m,
+      isMine: m.sender_role === 'client',
+      time: this.formatMsgTime(m.at),
+    }));
+  }
+
+  private formatMsgTime(iso: string): string {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return isNaN(d.getTime()) ? '' : d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+  }
 
   // ---- Staff (admin/employee panel) ----
   turns: any[] = [];
@@ -108,6 +140,11 @@ export class Home implements OnInit, OnDestroy {
 
     this.documents = JSON.parse(localStorage.getItem('client_documents') || '[]');
 
+    this.turn.getVirtualDocumentRequirements().subscribe({
+      next: (data: any) => { this.requiredDocuments = data.documents || []; this.cdr.detectChanges(); },
+      error: () => {}
+    });
+
     // WebSocket subscription
     this.ws.messages$.pipe(takeUntil(this.destroy$)).subscribe({
       next: (msg) => {
@@ -162,6 +199,11 @@ export class Home implements OnInit, OnDestroy {
           this.userTurn      = t.number;
           this.userTurnSede  = t.sede || '';
           this.userTurnStatus = t.status;
+          this.userTurnServiceType = t.service_type || '';
+          this.meetLink            = t.meet_link || '';
+          this.uploadedDocuments   = t.uploaded_documents || [];
+          this.chatMessages        = t.chat_messages || [];
+          if (t.required_documents && t.required_documents.length) this.requiredDocuments = t.required_documents;
           localStorage.setItem('userTurn', t.number);
           if (t.sede) localStorage.setItem('turnSede', t.sede);
           this.view = 'tracking';
@@ -220,6 +262,11 @@ export class Home implements OnInit, OnDestroy {
     this.userTurnStatus = mine.status;
     // Keep sede in sync with what the server says
     if (mine.sede) this.userTurnSede = mine.sede;
+    if (mine.service_type) this.userTurnServiceType = mine.service_type;
+    this.meetLink          = mine.meet_link || this.meetLink;
+    this.uploadedDocuments = mine.uploaded_documents || this.uploadedDocuments;
+    this.chatMessages      = mine.chat_messages || this.chatMessages;
+    if (mine.required_documents && mine.required_documents.length) this.requiredDocuments = mine.required_documents;
 
     if (mine.status === 'finished' || mine.status === 'cancelled') {
       this.positionNum = 0;
@@ -300,6 +347,10 @@ export class Home implements OnInit, OnDestroy {
     this.userTurn          = null;
     this.userTurnSede      = '';
     this.userTurnStatus    = '';
+    this.userTurnServiceType = '';
+    this.meetLink           = '';
+    this.uploadedDocuments  = [];
+    this.chatMessages       = [];
     this.positionNum       = 0;
     this.turnsAhead        = 0;
     this.warnAlarmPlayed   = false;
@@ -333,6 +384,11 @@ export class Home implements OnInit, OnDestroy {
         this.userTurn          = data.number;
         this.userTurnSede      = sede;
         this.userTurnStatus    = 'waiting';
+        this.userTurnServiceType = serviceType;
+        this.meetLink           = data.meet_link || '';
+        this.uploadedDocuments  = [];
+        this.chatMessages       = [];
+        if (data.required_documents) this.requiredDocuments = data.required_documents;
         this.positionNum       = 0;
         this.turnsAhead        = 0;
         this.warnAlarmPlayed   = false;
@@ -372,6 +428,55 @@ export class Home implements OnInit, OnDestroy {
         this.cdr.detectChanges();
       },
       error: () => { this.errorMsg = 'Error al cancelar el turno'; this.cdr.detectChanges(); }
+    });
+  }
+
+  onDocumentFileSelected(key: string, event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files && input.files[0];
+    if (!file || !this.userTurn) return;
+
+    this.docUploadError = '';
+    this.uploadingKey = key;
+    this.cdr.detectChanges();
+
+    this.turn.uploadVirtualDocument(this.userTurn, key, file).subscribe({
+      next: (data: any) => {
+        this.uploadingKey = null;
+        if (data.success) {
+          this.uploadedDocuments = data.uploaded_documents || this.uploadedDocuments;
+        } else {
+          this.docUploadError = data.message || 'No se pudo subir el documento';
+        }
+        input.value = '';
+        this.cdr.detectChanges();
+      },
+      error: (err: any) => {
+        this.uploadingKey = null;
+        this.docUploadError = err?.error?.message || 'No se pudo subir el documento';
+        input.value = '';
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  sendChatMessage(): void {
+    const text = this.chatInput.trim();
+    if (!text || !this.userTurn || this.sendingChat) return;
+    this.sendingChat = true;
+    this.turn.sendVirtualChatMessage(this.userTurn, text).subscribe({
+      next: (data: any) => {
+        this.sendingChat = false;
+        if (data.success) {
+          this.chatMessages = data.chat_messages || this.chatMessages;
+          this.chatInput = '';
+        }
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.sendingChat = false;
+        this.cdr.detectChanges();
+      }
     });
   }
 

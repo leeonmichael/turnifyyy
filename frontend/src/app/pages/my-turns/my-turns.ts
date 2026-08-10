@@ -87,7 +87,8 @@ export class MyTurns implements OnInit, OnDestroy {
       general: 'General',
       preferential: 'Preferencial',
       vip: 'VIP',
-      emergency: 'Emergencia'
+      emergency: 'Emergencia',
+      virtual: 'Virtual'
     };
     return labels[type] || type;
   }

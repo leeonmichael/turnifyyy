@@ -24,9 +24,31 @@ export class VirtualTurns implements OnInit, OnDestroy {
   loading = false;
 
   activeVirtualTurn: any = null;
-  chatMessages: { sender: string; text: string; time: string; isSystem: boolean }[] = [];
+  systemMessages: { sender: string; text: string; at: string; isSystem: boolean }[] = [];
   newMessage = '';
   finishing = false;
+  sendingMessage = false;
+
+  // Combina las notas persistidas (chat_messages, compartido con el cliente)
+  // con los avisos locales de sistema (turno iniciado/finalizado...), ordenado por hora.
+  get displayMessages(): any[] {
+    const shared = (this.activeVirtualTurn?.chat_messages || []).map((m: any) => ({
+      sender: m.sender_name,
+      text: m.text,
+      at: m.at,
+      isSystem: false,
+      isMine: m.sender_role === 'employee',
+    }));
+    return [...shared, ...this.systemMessages]
+      .sort((a, b) => (a.at || '').localeCompare(b.at || ''))
+      .map(m => ({ ...m, time: this.formatMsgTime(m.at) }));
+  }
+
+  private formatMsgTime(iso: string): string {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return isNaN(d.getTime()) ? '' : d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+  }
 
   private destroy$ = new Subject<void>();
   private refreshInterval: any;
@@ -116,12 +138,60 @@ export class VirtualTurns implements OnInit, OnDestroy {
     });
   }
 
+  // ¿Ya subió todos los documentos obligatorios? (para el badge de la tabla)
+  docsReady(turn: any): boolean {
+    const required = (turn.required_documents || []).filter((d: any) => d.required);
+    if (!required.length) return true;
+    const uploaded = turn.uploaded_documents || [];
+    return required.every((d: any) => uploaded.some((u: any) => u.key === d.key));
+  }
+
+  missingRequiredDocs(turn: any): any[] {
+    const uploaded = turn.uploaded_documents || [];
+    return (turn.required_documents || []).filter((d: any) => !uploaded.some((u: any) => u.key === d.key));
+  }
+
+  copyMeetLink(): void {
+    if (!this.activeVirtualTurn?.meet_link) return;
+    navigator.clipboard?.writeText(this.activeVirtualTurn.meet_link).then(
+      () => this.addSystemMsg('Link de videollamada copiado al portapapeles.'),
+      () => {}
+    );
+  }
+
+  approveDocument(key: string): void {
+    if (!this.activeVirtualTurn) return;
+    this.turn.reviewVirtualDocument(this.activeVirtualTurn.number, key, 'approved').subscribe({
+      next: (data: any) => {
+        if (data.success) {
+          this.activeVirtualTurn = { ...this.activeVirtualTurn, uploaded_documents: data.uploaded_documents };
+          this.cdr.detectChanges();
+        }
+      },
+      error: () => alert('Error al aprobar el documento')
+    });
+  }
+
+  rejectDocument(key: string): void {
+    if (!this.activeVirtualTurn) return;
+    const note = prompt('Motivo del rechazo (opcional):') || '';
+    this.turn.reviewVirtualDocument(this.activeVirtualTurn.number, key, 'rejected', note).subscribe({
+      next: (data: any) => {
+        if (data.success) {
+          this.activeVirtualTurn = { ...this.activeVirtualTurn, uploaded_documents: data.uploaded_documents };
+          this.cdr.detectChanges();
+        }
+      },
+      error: () => alert('Error al rechazar el documento')
+    });
+  }
+
   attendVirtual(turn: any): void {
     this.turn.callSpecific(turn.number).subscribe({
       next: (data: any) => {
         if (data.success) {
           this.activeVirtualTurn = { ...turn, status: 'called' };
-          this.chatMessages = [];
+          this.systemMessages = [];
           this.addSystemMsg(`Turno ${turn.number} iniciado. Atendiendo al cliente ${turn.created_by || ''}.`);
           this.ws.send({ action: 'get_all' });
           this.cdr.detectChanges();
@@ -135,7 +205,7 @@ export class VirtualTurns implements OnInit, OnDestroy {
 
   resumeVirtual(turn: any): void {
     this.activeVirtualTurn = turn;
-    if (this.chatMessages.length === 0) {
+    if (this.systemMessages.length === 0) {
       this.addSystemMsg(`Retomando atención del turno ${turn.number}.`);
     }
     this.cdr.detectChanges();
@@ -143,23 +213,32 @@ export class VirtualTurns implements OnInit, OnDestroy {
 
   sendMessage(): void {
     const text = this.newMessage.trim();
-    if (!text) return;
-    const user = this.auth.getCurrentUser();
-    this.chatMessages.push({
-      sender: user?.full_name || user?.username || 'Empleado',
-      text,
-      time: new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }),
-      isSystem: false
+    if (!text || !this.activeVirtualTurn || this.sendingMessage) return;
+    this.sendingMessage = true;
+    this.turn.sendVirtualChatMessage(this.activeVirtualTurn.number, text).subscribe({
+      next: (data: any) => {
+        this.sendingMessage = false;
+        if (data.success) {
+          this.activeVirtualTurn = { ...this.activeVirtualTurn, chat_messages: data.chat_messages };
+          this.newMessage = '';
+        } else {
+          alert(data.message || 'No se pudo enviar el mensaje');
+        }
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.sendingMessage = false;
+        alert('No se pudo enviar el mensaje');
+        this.cdr.detectChanges();
+      }
     });
-    this.newMessage = '';
-    this.cdr.detectChanges();
   }
 
   private addSystemMsg(text: string): void {
-    this.chatMessages.push({
+    this.systemMessages.push({
       sender: 'Sistema',
       text,
-      time: new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }),
+      at: new Date().toISOString(),
       isSystem: true
     });
   }
@@ -174,7 +253,7 @@ export class VirtualTurns implements OnInit, OnDestroy {
         this.cdr.detectChanges();
         setTimeout(() => {
           this.activeVirtualTurn = null;
-          this.chatMessages = [];
+          this.systemMessages = [];
           this.finishing = false;
           this.loadData();
           this.cdr.detectChanges();
@@ -196,7 +275,7 @@ export class VirtualTurns implements OnInit, OnDestroy {
         this.cdr.detectChanges();
         setTimeout(() => {
           this.activeVirtualTurn = null;
-          this.chatMessages = [];
+          this.systemMessages = [];
           this.loadData();
           this.cdr.detectChanges();
         }, 1500);
@@ -215,7 +294,7 @@ export class VirtualTurns implements OnInit, OnDestroy {
         this.cdr.detectChanges();
         setTimeout(() => {
           this.activeVirtualTurn = null;
-          this.chatMessages = [];
+          this.systemMessages = [];
           this.loadData();
           this.cdr.detectChanges();
         }, 1500);
@@ -226,7 +305,7 @@ export class VirtualTurns implements OnInit, OnDestroy {
 
   closeChat(): void {
     this.activeVirtualTurn = null;
-    this.chatMessages = [];
+    this.systemMessages = [];
     this.cdr.detectChanges();
   }
 }

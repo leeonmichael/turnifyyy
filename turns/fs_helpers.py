@@ -4,6 +4,7 @@ Movidos desde turns/views.py para que puedan ser reutilizados tanto por las
 vistas HTTP como por el asistente de IA (turns/ai_assistant.py) sin generar
 un import circular con views.py.
 """
+import uuid
 from datetime import datetime
 from django.utils import timezone
 from channels.layers import get_channel_layer
@@ -13,6 +14,12 @@ from .firebase_config import db
 
 def get_turn_prefix(service_type: str) -> str:
     return {'general': 'A', 'preferential': 'B', 'emergency': 'E', 'vip': 'V', 'virtual': 'W'}.get(service_type, 'A')
+
+
+def generate_meet_link(turn_number: str) -> str:
+    """Sala de Jitsi Meet única por turno — no requiere cuenta ni credenciales."""
+    room = f"Turnify-{turn_number}-{uuid.uuid4().hex[:8]}"
+    return f"https://meet.jit.si/{room}"
 
 
 def _fmt_time(iso_str: str) -> str:
@@ -110,7 +117,11 @@ def broadcast_turn_update():
                 'created_at':   _fmt_time(t.get('created_at', '')),
                 'called_by':    t.get('called_by', ''),
                 'created_by':   t.get('created_by', ''),
-                'scheduled_for':_fmt_datetime(t.get('scheduled_for', ''))
+                'scheduled_for':_fmt_datetime(t.get('scheduled_for', '')),
+                'meet_link':          t.get('meet_link', ''),
+                'required_documents': t.get('required_documents', []),
+                'uploaded_documents': t.get('uploaded_documents', []),
+                'chat_messages':      t.get('chat_messages', []),
             })
         turns_data.sort(key=lambda x: x.get('created_at', ''), reverse=True)
         channel_layer = get_channel_layer()

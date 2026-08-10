@@ -26,8 +26,9 @@ from .turn_services import (
     create_turn_service, cancel_own_turn_service, get_my_active_turn_service,
     get_my_turns_service, get_position_service, get_sedes_service,
     call_next_service, cancel_current_service, finish_current_service,
-    get_all_turns_service, get_statistics_service,
+    get_all_turns_service, get_statistics_service, VIRTUAL_REQUIRED_DOCUMENTS,
 )
+from .storage_helpers import upload_virtual_document_file
 from .ai_assistant import get_chatbot_reply_stream, get_proactive_message, AIUnavailableError
 
 
@@ -761,7 +762,9 @@ def call_specific_turn(request):
     all_turns = _fs_all_turns()
     candidates = [t for t in all_turns if t.get('number') == turn_number and t.get('status') == 'waiting']
     if employee_sede:
-        candidates = [t for t in candidates if t.get('sede') == employee_sede]
+        # Los turnos virtuales no pertenecen a ninguna sede física, cualquier
+        # empleado puede atenderlos sin importar su sede asignada.
+        candidates = [t for t in candidates if t.get('sede') == employee_sede or t.get('service_type') == 'virtual']
     if not candidates:
         return Response({'success': False, 'message': 'Turn not found'}, status=404)
 
@@ -790,7 +793,7 @@ def reschedule_current(request):
     all_turns = _fs_all_turns()
     called = [t for t in all_turns if t.get('status') == 'called']
     if sede:
-        called = [t for t in called if t.get('sede') == sede]
+        called = [t for t in called if t.get('sede') == sede or t.get('service_type') == 'virtual']
     called.sort(key=lambda t: t.get('created_at', ''), reverse=True)
     if not called:
         return Response({'success': False, 'message': 'No hay turno en progreso'}, status=404)
@@ -1000,6 +1003,144 @@ def upload_document(request):
         return Response({'success': False, 'message': 'Turn not found'}, status=404)
     db.collection('turns').document(matches[0]['_doc_id']).update({'uploaded_documents': document_url})
     return Response({'success': True})
+
+
+# ─── Documentos y videollamada de turnos virtuales ────────────────────────────
+
+@csrf_exempt
+@api_view(['GET'])
+def get_document_requirements(request):
+    return Response({'documents': VIRTUAL_REQUIRED_DOCUMENTS})
+
+
+@csrf_exempt
+@api_view(['POST'])
+@jwt_required
+def upload_virtual_document(request):
+    turn_number  = request.data.get('turn_number', '')
+    document_key = request.data.get('document_key', '')
+    file_obj     = request.FILES.get('file')
+    username     = request.jwt_payload.get('username', '')
+
+    if not db:
+        return Response({'success': False, 'message': 'Servicio no disponible'}, status=503)
+    if not turn_number or not document_key or not file_obj:
+        return Response({'success': False, 'message': 'Faltan datos del documento'}, status=400)
+
+    all_turns = _fs_all_turns()
+    matches = [t for t in all_turns if t.get('number') == turn_number]
+    if not matches:
+        return Response({'success': False, 'message': 'Turno no encontrado'}, status=404)
+    turn = matches[0]
+    if turn.get('created_by') != username:
+        return Response({'success': False, 'message': 'No tienes permiso sobre este turno'}, status=403)
+    if turn.get('service_type') != 'virtual':
+        return Response({'success': False, 'message': 'Este turno no admite documentos'}, status=400)
+
+    doc_label = next(
+        (d['label'] for d in turn.get('required_documents', []) if d.get('key') == document_key),
+        document_key
+    )
+    url, error = upload_virtual_document_file(turn_number, document_key, file_obj)
+    if error:
+        return Response({'success': False, 'message': error}, status=400)
+
+    uploaded = [d for d in turn.get('uploaded_documents', []) if d.get('key') != document_key]
+    uploaded.append({
+        'key':         document_key,
+        'label':       doc_label,
+        'url':         url,
+        'file_name':   file_obj.name,
+        'uploaded_at': timezone.now().isoformat(),
+        'status':      'pending',
+        'review_note': '',
+    })
+    db.collection('turns').document(turn['_doc_id']).update({'uploaded_documents': uploaded})
+    broadcast_turn_update()
+    return Response({'success': True, 'uploaded_documents': uploaded})
+
+
+@csrf_exempt
+@api_view(['POST'])
+@jwt_required
+@role_required('admin', 'employee')
+def review_virtual_document(request):
+    turn_number   = request.data.get('turn_number', '')
+    document_key  = request.data.get('document_key', '')
+    review_status = request.data.get('status', '')
+    note          = request.data.get('note', '')
+
+    if not db:
+        return Response({'success': False, 'message': 'Servicio no disponible'}, status=503)
+    if review_status not in ('approved', 'rejected'):
+        return Response({'success': False, 'message': 'Estado inválido'}, status=400)
+
+    all_turns = _fs_all_turns()
+    matches = [t for t in all_turns if t.get('number') == turn_number]
+    if not matches:
+        return Response({'success': False, 'message': 'Turno no encontrado'}, status=404)
+    turn = matches[0]
+
+    uploaded = turn.get('uploaded_documents', [])
+    found = False
+    for d in uploaded:
+        if d.get('key') == document_key:
+            d['status'] = review_status
+            d['review_note'] = note
+            found = True
+            break
+    if not found:
+        return Response({'success': False, 'message': 'Documento no encontrado'}, status=404)
+
+    db.collection('turns').document(turn['_doc_id']).update({'uploaded_documents': uploaded})
+    broadcast_turn_update()
+    return Response({'success': True, 'uploaded_documents': uploaded})
+
+
+@csrf_exempt
+@api_view(['POST'])
+@jwt_required
+def send_virtual_chat_message(request):
+    turn_number = request.data.get('turn_number', '')
+    text        = (request.data.get('text', '') or '').strip()
+    username    = request.jwt_payload.get('username', '')
+    role        = request.jwt_payload.get('role', '')
+
+    if not db:
+        return Response({'success': False, 'message': 'Servicio no disponible'}, status=503)
+    if not turn_number or not text:
+        return Response({'success': False, 'message': 'Escribe un mensaje'}, status=400)
+    if len(text) > 1000:
+        return Response({'success': False, 'message': 'El mensaje es demasiado largo'}, status=400)
+
+    all_turns = _fs_all_turns()
+    matches = [t for t in all_turns if t.get('number') == turn_number]
+    if not matches:
+        return Response({'success': False, 'message': 'Turno no encontrado'}, status=404)
+    turn = matches[0]
+    if turn.get('service_type') != 'virtual':
+        return Response({'success': False, 'message': 'Este turno no admite chat'}, status=400)
+
+    if turn.get('created_by') == username:
+        sender_role = 'client'
+        sender_name = (turn.get('client_data') or {}).get('full_name') or username
+    elif role in ('admin', 'employee'):
+        sender_role = 'employee'
+        u = _fs_get_user(username)
+        sender_name = (u or {}).get('full_name') or username
+    else:
+        return Response({'success': False, 'message': 'No tienes permiso sobre este turno'}, status=403)
+
+    messages = turn.get('chat_messages', [])
+    messages.append({
+        'sender_name': sender_name,
+        'sender_role': sender_role,
+        'text':        text,
+        'at':          timezone.now().isoformat(),
+    })
+    db.collection('turns').document(turn['_doc_id']).update({'chat_messages': messages})
+    broadcast_turn_update()
+    return Response({'success': True, 'chat_messages': messages})
 
 
 @csrf_exempt

@@ -240,6 +240,22 @@
 
 .reschedule-icon { display: inline-flex; align-items: center; }
 
+.meet-link-badge {
+  margin-top: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: #10b981;
+  color: white;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  padding: 0.35rem 0.9rem;
+  border-radius: 20px;
+  text-decoration: none;
+  transition: background 0.2s;
+}
+.meet-link-badge:hover { background: #059669; }
+
 /* Status column */
 .turn-status-col {
   flex-shrink: 0;

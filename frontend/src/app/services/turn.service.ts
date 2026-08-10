@@ -63,6 +63,29 @@ export class TurnService {
     return this.http.get(`${this.apiUrl}/position/?turn_number=${turn_number}`, { headers: this.getHeaders() });
   }
 
+  getVirtualDocumentRequirements(): Observable<any> {
+    return this.http.get(`${this.apiUrl}/virtual/document-requirements/`);
+  }
+
+  uploadVirtualDocument(turn_number: string, document_key: string, file: File): Observable<any> {
+    const formData = new FormData();
+    formData.append('turn_number', turn_number);
+    formData.append('document_key', document_key);
+    formData.append('file', file);
+    const token = localStorage.getItem('turnify_token');
+    let headers = new HttpHeaders();
+    if (token) headers = headers.set('Authorization', `Bearer ${token}`);
+    return this.http.post(`${this.apiUrl}/virtual/upload-document/`, formData, { headers });
+  }
+
+  reviewVirtualDocument(turn_number: string, document_key: string, status: string, note: string = ''): Observable<any> {
+    return this.http.post(`${this.apiUrl}/virtual/review-document/`, { turn_number, document_key, status, note }, { headers: this.getHeaders() });
+  }
+
+  sendVirtualChatMessage(turn_number: string, text: string): Observable<any> {
+    return this.http.post(`${this.apiUrl}/virtual/send-message/`, { turn_number, text }, { headers: this.getHeaders() });
+  }
+
   getStatistics(): Observable<any> {
     return this.http.get(`${this.apiUrl}/statistics/`, { headers: this.getHeaders() });
   }

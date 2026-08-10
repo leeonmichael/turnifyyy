@@ -63,6 +63,27 @@
           </div>
         }
 
+        @if (turnMode === 'virtual' && requiredDocuments.length > 0) {
+          <div class="virtual-docs-preview">
+            <div class="virtual-docs-preview-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 4h6a1 1 0 0 1 1 1v1a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z"></path>
+                <path d="M8 4H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"></path>
+              </svg>
+              Ten a la mano estos documentos
+            </div>
+            <ul class="virtual-docs-preview-list">
+              @for (doc of requiredDocuments; track doc.key) {
+                <li>
+                  {{ doc.label }}
+                  <span class="doc-req-tag" [class.doc-optional-tag]="!doc.required">{{ doc.required ? 'Obligatorio' : 'Opcional' }}</span>
+                </li>
+              }
+            </ul>
+            <p class="virtual-docs-preview-hint">Los subirás justo después de agendar el turno.</p>
+          </div>
+        }
+
         @if (errorMsg) {
           <div class="error-msg">{{ errorMsg }}</div>
         }
@@ -99,6 +120,56 @@
         </div>
       </div>
 
+      <!-- TURNO VIRTUAL: documentos requeridos -->
+      @if (isVirtualTurn && requiredDocuments.length > 0 && !isFinished && userTurnStatus !== 'cancelled') {
+        <div class="virtual-docs-card">
+          <div class="virtual-docs-card-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 4h6a1 1 0 0 1 1 1v1a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z"></path>
+              <path d="M8 4H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"></path>
+            </svg>
+            Documentos requeridos
+          </div>
+
+          @if (docUploadError) {
+            <div class="doc-upload-error">{{ docUploadError }}</div>
+          }
+
+          @for (doc of requiredDocuments; track doc.key) {
+            <div class="doc-row">
+              <div class="doc-row-info">
+                <span class="doc-row-label">{{ doc.label }}</span>
+                <span class="doc-req-tag" [class.doc-optional-tag]="!doc.required">{{ doc.required ? 'Obligatorio' : 'Opcional' }}</span>
+              </div>
+
+              @let status = docStatusFor(doc.key);
+              <div class="doc-row-action">
+                @if (status?.status === 'approved') {
+                  <span class="doc-status-pill doc-status-approved">Aprobado</span>
+                } @else if (status?.status === 'rejected') {
+                  <span class="doc-status-pill doc-status-rejected" [title]="status.review_note">Rechazado</span>
+                } @else if (status) {
+                  <span class="doc-status-pill doc-status-pending">En revisión</span>
+                } @else {
+                  <span class="doc-status-pill doc-status-missing">Sin subir</span>
+                }
+
+                <label class="doc-upload-btn" [class.doc-uploading]="uploadingKey === doc.key">
+                  {{ uploadingKey === doc.key ? 'Subiendo...' : (status ? 'Reemplazar' : 'Subir') }}
+                  <input type="file" accept=".jpg,.jpeg,.png,.pdf" hidden
+                         [disabled]="uploadingKey === doc.key"
+                         (change)="onDocumentFileSelected(doc.key, $event)" />
+                </label>
+              </div>
+
+              @if (status?.status === 'rejected' && status?.review_note) {
+                <div class="doc-reject-note">Motivo: {{ status.review_note }}</div>
+              }
+            </div>
+          }
+        </div>
+      }
+
       <!-- BANNER: LLAMANDO AHORA -->
       @if (isCalled) {
         <div class="banner-called">
@@ -111,6 +182,62 @@
           <div>
             <div class="banner-title">¡ESTÁN A PUNTO DE LLAMARTE!</div>
             <div class="banner-sub">Es tu turno, espera el llamado</div>
+          </div>
+        </div>
+      }
+
+      <!-- TURNO VIRTUAL: unirse a la videollamada -->
+      @if (isVirtualTurn && isCalled && meetLink) {
+        <div class="meet-call-card">
+          <div class="meet-call-icon">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m22 8-6 4 6 4V8Z"></path>
+              <rect x="2" y="6" width="14" height="12" rx="2"></rect>
+            </svg>
+          </div>
+          <div class="meet-call-text">
+            <div class="meet-call-title">Tu videollamada está lista</div>
+            <div class="meet-call-sub">Únete ahora para que te atiendan</div>
+          </div>
+          <a [href]="meetLink" target="_blank" rel="noopener" class="meet-call-btn">Unirse a la videollamada</a>
+        </div>
+      }
+
+      <!-- TURNO VIRTUAL: chat con el empleado -->
+      @if (isVirtualTurn && isCalled) {
+        <div class="client-chat-card">
+          <div class="client-chat-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+            Chat con quien te atiende
+          </div>
+
+          <div class="client-chat-messages">
+            @for (msg of displayChatMessages; track $index) {
+              <div class="client-chat-msg" [class.client-chat-mine]="msg.isMine">
+                <div class="client-chat-msg-header">
+                  <span>{{ msg.sender_name }}</span>
+                  <span>{{ msg.time }}</span>
+                </div>
+                <div class="client-chat-msg-body">{{ msg.text }}</div>
+              </div>
+            }
+            @if (displayChatMessages.length === 0) {
+              <div class="client-chat-placeholder">Aún no hay mensajes.</div>
+            }
+          </div>
+
+          <div class="client-chat-input-row">
+            <input
+              [(ngModel)]="chatInput"
+              (keyup.enter)="sendChatMessage()"
+              placeholder="Escribe tu mensaje..."
+              [disabled]="sendingChat"
+              class="client-chat-input" />
+            <button (click)="sendChatMessage()" [disabled]="sendingChat" class="client-chat-send">
+              {{ sendingChat ? 'Enviando...' : 'Enviar' }}
+            </button>
           </div>
         </div>
       }
