@@ -1,6 +1,6 @@
-// Cambia USE_REMOTE a true cuando el backend ya esté desplegado en Render
-// (funciona en cualquier red, no solo en tu wifi). Con false usa tu PC en LAN.
-const USE_REMOTE = false;
+// Cambia USE_REMOTE a false para volver a usar tu PC en LAN (desarrollo local).
+// En true, la app funciona en cualquier red porque habla con el backend en Render.
+const USE_REMOTE = true;
 
 // IP local (LAN) de la PC donde corre el backend Django.
 // - Celular físico + Expo Go: usa la IP LAN de tu PC (ipconfig -> IPv4)
@@ -9,8 +9,8 @@ const USE_REMOTE = false;
 const LAN_HOST = '192.168.1.8';
 const LAN_PORT = 8000;
 
-// URL pública de Render una vez desplegado, ej: https://turnify-pro-backend.onrender.com
-const REMOTE_URL = 'https://REEMPLAZA-CON-TU-URL-DE-RENDER.onrender.com';
+// URL pública del backend en Render.
+const REMOTE_URL = 'https://turnify-pro-backend.onrender.com';
 
 const LAN_HTTP_URL = `http://${LAN_HOST}:${LAN_PORT}`;
 
