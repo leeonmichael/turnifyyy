@@ -13,7 +13,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY frontend/package.json frontend/package-lock.json frontend/
-RUN npm --prefix frontend ci
+RUN npm --prefix frontend install
 
 COPY . .
 RUN npm --prefix frontend run build
