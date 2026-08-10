@@ -121,3 +121,9 @@ def broadcast_turn_update():
             )
     except Exception:
         pass
+
+    try:
+        from .push_service import notify_upcoming_turns
+        notify_upcoming_turns()
+    except Exception:
+        pass

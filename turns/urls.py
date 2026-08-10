@@ -37,6 +37,7 @@ urlpatterns=[
     path('documents/', views.set_required_documents, name='set_required_documents'),
     path('upload-document/', views.upload_document, name='upload_document'),
     path('my-turns/', views.my_turns, name='my_turns'),
+    path('register-push-token/', views.register_push_token, name='register_push_token'),
     path('my-active-turn/', views.get_my_active_turn, name='get_my_active_turn'),
     path('cancel-turn/<str:turn_number>/', views.cancel_turn, name='cancel_turn'),
     path('cancel-turn-by-id/<str:turn_id>/', views.cancel_turn_by_id, name='cancel_turn_by_id'),

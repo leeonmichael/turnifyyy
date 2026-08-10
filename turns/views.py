@@ -1013,6 +1013,25 @@ def my_turns(request):
     return Response(data, status=status_code)
 
 
+@csrf_exempt
+@api_view(['POST'])
+def register_push_token(request):
+    token      = get_token_from_request(request)
+    payload    = decode_access_token(token) if token else None
+    username   = payload.get('username', '') if payload else ''
+    push_token = request.data.get('push_token', '').strip()
+
+    if not username:
+        return Response({'success': False, 'message': 'No autenticado'}, status=401)
+    if not push_token:
+        return Response({'success': False, 'message': 'push_token requerido'}, status=400)
+    if not db:
+        return Response({'success': False, 'message': 'Servicio no disponible'}, status=503)
+
+    db.collection('users').document(username).update({'push_token': push_token})
+    return Response({'success': True})
+
+
 # ─── Sedes ───────────────────────────────────────────────────────────────────
 
 @csrf_exempt
