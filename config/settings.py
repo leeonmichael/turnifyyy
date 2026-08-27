@@ -68,7 +68,7 @@ STATICFILES_STORAGE = 'whitenoise.storage.StaticFilesStorage'
 DEFAULT_AUTO_FIELD='django.db.models.BigAutoField'
 CORS_ALLOW_ALL_ORIGINS=True
 
-JWT_SECRET_KEY = 'turnify-pro-secret-key-2024'
+JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'turnify-pro-secret-key-2024')
 JWT_ALGORITHM = 'HS256'
 JWT_ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
