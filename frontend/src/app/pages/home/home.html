@@ -92,6 +92,38 @@
           {{ requestingTurn ? 'Solicitando...' : 'Pedir mi Turno' }}
         </button>
       </div>
+
+      <div class="how-it-works">
+        <div class="how-it-works-step">
+          <div class="how-it-works-num">1</div>
+          <div>
+            <div class="how-it-works-title">Elige tu atención</div>
+            <div class="how-it-works-text">Selecciona el tipo de turno y la modalidad, presencial o virtual.</div>
+          </div>
+        </div>
+        <div class="how-it-works-step">
+          <div class="how-it-works-num">2</div>
+          <div>
+            <div class="how-it-works-title">Recibe tu número</div>
+            <div class="how-it-works-text">Al instante, con tu posición y tiempo estimado en tiempo real.</div>
+          </div>
+        </div>
+        <div class="how-it-works-step">
+          <div class="how-it-works-num">3</div>
+          <div>
+            <div class="how-it-works-title">Te avisamos</div>
+            <div class="how-it-works-text">Una alarma y TURNITY te avisan cuando esté cerca tu turno.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="assistant-hint-card" (click)="openChatbotModal()">
+        <img src="/avatar-ia.jpeg" alt="TURNITY" class="assistant-hint-avatar">
+        <div>
+          <div class="assistant-hint-title">¿Tienes dudas?</div>
+          <div class="assistant-hint-text">Pregúntale a TURNITY, tu asistente virtual, por texto o por voz.</div>
+        </div>
+      </div>
     }
 
     <!-- ======= VISTA: SEGUIMIENTO DEL TURNO ======= -->
@@ -405,10 +437,10 @@
 
     <div class="waiting-queue">
       <div class="queue-header"><h2 class="queue-title">Turnos en el Sistema</h2></div>
-      @if (turns.length === 0) {
+      @if (filteredTurns.length === 0) {
         <div class="no-turns"><p>No hay turnos registrados</p></div>
       }
-      @for (turn of turns; track $index) {
+      @for (turn of filteredTurns; track $index) {
         <div class="turn-item">
           <div class="turn-info">
             <span class="turn-number-label">{{ turn.number }}</span>

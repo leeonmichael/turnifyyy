@@ -22,33 +22,28 @@
         </div>
 
         <div class="footer-section">
-          <h4>Producto</h4>
+          <h4>Navegación</h4>
           <a routerLink="/home">Inicio</a>
           <a routerLink="/login">Iniciar Sesión</a>
           <a routerLink="/register">Registrarse</a>
-          <a href="#">Precios</a>
         </div>
 
         <div class="footer-section">
-          <h4>Empresa</h4>
-          <a href="#">Sobre Nosotros</a>
-          <a href="#">Blog</a>
-          <a href="#">Carreras</a>
-          <a href="#">Contacto</a>
+          <h4>Proyecto</h4>
+          <p>Maycol Esneider Posada León</p>
+          <p>Juan Manuel Baracaldo</p>
+          <p>Nicolás Ruiz</p>
         </div>
 
         <div class="footer-section" *ngIf="!isAdmin()">
-          <h4>Contacto</h4>
-          <p>info@turnifypro.com</p>
-          <p>+57 (1) 234-5678</p>
-          <p>Bogotá, Colombia</p>
+          <h4>Sedes de atención</h4>
+          <p>Bogotá y sabana occidental</p>
+          <p>Mosquera, Facatativá, Madrid</p>
         </div>
 
         <div class="footer-section" *ngIf="isAdmin()">
-          <h4>Legal</h4>
-          <a href="#">Términos</a>
-          <a href="#">Privacidad</a>
-          <a href="#">Cookies</a>
+          <h4>Proyecto académico</h4>
+          <p>SENA - Ficha 3203084</p>
         </div>
       </div>
     </div>
@@ -56,12 +51,7 @@
     <div class="footer-divider">
       <div class="footer-container">
         <div class="footer-bottom-wrapper">
-          <p class="footer-copyright">© {{ currentYear }} Turnify Pro. Todos los derechos reservados.</p>
-          <div class="footer-badges">
-            <span class="footer-badge">Certificación ISO</span>
-            <span class="footer-badge">LGPD</span>
-            <span class="footer-badge">SOC 2</span>
-          </div>
+          <p class="footer-copyright">© {{ currentYear }} Turnify Pro. Proyecto académico SENA - Ficha 3203084.</p>
         </div>
       </div>
     </div>

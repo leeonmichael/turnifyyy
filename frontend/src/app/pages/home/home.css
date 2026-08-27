@@ -288,6 +288,60 @@
 .btn-cancel-turn:hover { background: #fef2f2; }
 
 /* ===== INFO CARD ===== */
+/* ===== Cómo funciona / aviso del asistente (llenan el vacío antes de pedir turno) ===== */
+.how-it-works {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+.how-it-works-step {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  background: white;
+  border-radius: 14px;
+  padding: 1.1rem;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+}
+.how-it-works-num {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #1e3a8a, #2563eb);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.875rem;
+}
+.how-it-works-title { font-weight: 700; color: #1e293b; font-size: 0.9rem; margin-bottom: 0.15rem; }
+.how-it-works-text  { font-size: 0.8125rem; color: #64748b; line-height: 1.4; }
+
+.assistant-hint-card {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  background: linear-gradient(135deg, #eef4ff, #f5f0ff);
+  border: 1px solid #dbeafe;
+  border-radius: 14px;
+  padding: 1rem 1.25rem;
+  margin-top: 1rem;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+.assistant-hint-card:hover { transform: translateY(-1px); }
+.assistant-hint-avatar { width: 42px; height: 42px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+.assistant-hint-title { font-weight: 700; color: #1e293b; font-size: 0.9rem; }
+.assistant-hint-text  { font-size: 0.8125rem; color: #475569; }
+
+@media (max-width: 700px) {
+  .how-it-works { grid-template-columns: 1fr; }
+}
+
 .info-card { background: white; border-radius: 14px; padding: 1.5rem; margin-top: 1.25rem; box-shadow: 0 2px 12px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; }
 .info-card h2 { font-size: 1rem; font-weight: 700; color: #1e293b; margin-bottom: 0.75rem; }
 .doc-item { padding: 0.65rem 0.875rem; background: #f0fdf4; border-radius: 8px; margin-bottom: 0.4rem; color: #166534; font-weight: 500; border: 1px solid #bbf7d0; font-size: 0.875rem; }

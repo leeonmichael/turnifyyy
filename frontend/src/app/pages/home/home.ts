@@ -115,6 +115,13 @@ export class Home implements OnInit, OnDestroy {
     return this.filterSedeId ? base.filter((t: any) => t.sede_id === this.filterSedeId).length : base.length;
   }
 
+  // Usado por la lista de "Turnos en el Sistema" — antes se pintaba `turns`
+  // directo, sin aplicar el filtro de sede, así que el selector no tenía
+  // ningún efecto sobre la lista (solo sobre los contadores de arriba).
+  get filteredTurns(): any[] {
+    return this.filterSedeId ? this.turns.filter((t: any) => t.sede_id === this.filterSedeId) : this.turns;
+  }
+
   constructor(
     private auth: AuthService,
     private turn: TurnService,
@@ -343,10 +350,14 @@ export class Home implements OnInit, OnDestroy {
     this.proactiveToastText = text;
     this.cdr.detectChanges();
     if (this.proactiveToastTimer) clearTimeout(this.proactiveToastTimer);
+    // Tiempo de lectura proporcional al largo del mensaje (antes eran 8s
+    // fijos y no alcanzaba a leerse completo), con un mínimo generoso y un
+    // techo para que no se quede pegado en pantalla indefinidamente.
+    const readTimeMs = Math.max(14000, Math.min(24000, text.length * 110));
     this.proactiveToastTimer = setTimeout(() => {
       this.proactiveToastText = null;
       this.cdr.detectChanges();
-    }, 8000);
+    }, readTimeMs);
   }
 
   private resetTurnState(): void {
