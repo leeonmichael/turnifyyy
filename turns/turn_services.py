@@ -11,7 +11,7 @@ from .firebase_config import db
 from .fs_helpers import (
     _fs_all_turns, _fs_get_user, _get_employee_sede_id, _sedes_map, _resolve_sede_name,
     generate_turn_fb, get_turn_prefix, broadcast_turn_update,
-    generate_meet_link, _fmt_time, _fmt_datetime,
+    generate_meet_link, _fmt_time, _fmt_datetime, _fmt_date,
 )
 
 # Documentos requeridos para turnos virtuales — fuente única de verdad,
@@ -171,7 +171,7 @@ def get_my_turns_service(username: str) -> tuple[dict, int]:
         'sede':         _resolve_sede_name(t.get('sede_id', ''), sedes_map) or 'N/A',
         'created_at':   _fmt_datetime(t.get('created_at', '')),
         'finished_at':  _fmt_datetime(t.get('finished_at', '')) or None,
-        'scheduled_for':_fmt_datetime(t.get('scheduled_for', '')) or None,
+        'scheduled_for':_fmt_date(t.get('scheduled_for', '')) or None,
         'meet_link':    t.get('meet_link', ''),
     } for t in user_turns]}, 200
 
@@ -299,7 +299,7 @@ def get_all_turns_service(username: str, role: str) -> tuple[dict, int]:
         'created_at':   _fmt_time(t.get('created_at', '')),
         'called_by':    t.get('called_by', ''),
         'created_by':   t.get('created_by', ''),
-        'scheduled_for':_fmt_datetime(t.get('scheduled_for', '')),
+        'scheduled_for':_fmt_date(t.get('scheduled_for', '')),
         'meet_link':          t.get('meet_link', ''),
         'required_documents': t.get('required_documents', []),
         'uploaded_documents': t.get('uploaded_documents', []),

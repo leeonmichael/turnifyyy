@@ -101,7 +101,7 @@
       <div class="turn-hero"
            [class.turn-hero-warn]="isCloseSoon || isNext"
            [class.turn-hero-called]="isCalled"
-           [class.turn-hero-done]="isFinished || userTurnStatus === 'cancelled'">
+           [class.turn-hero-done]="isFinished || userTurnStatus === 'cancelled' || isRescheduled">
         <div class="turn-hero-label">TU TURNO</div>
         <div class="turn-hero-number">{{ userTurn }}</div>
         @if (userTurnSede) {
@@ -112,11 +112,13 @@
              [class.chip-waiting]="userTurnStatus === 'waiting' || userTurnStatus === ''"
              [class.chip-called]="isCalled"
              [class.chip-done]="isFinished"
-             [class.chip-cancelled]="userTurnStatus === 'cancelled'">
+             [class.chip-cancelled]="userTurnStatus === 'cancelled'"
+             [class.chip-rescheduled]="isRescheduled">
           @if (userTurnStatus === 'waiting' || userTurnStatus === '') { En espera }
           @if (isCalled)                                              { Llamando }
           @if (isFinished)                                            { Atendido }
           @if (userTurnStatus === 'cancelled')                        { Cancelado }
+          @if (isRescheduled)                                         { Reagendado }
         </div>
       </div>
 
@@ -338,6 +340,26 @@
         </div>
         <div class="action-row">
           <button class="get-turn-btn" (click)="goBackToRequest()">Pedir nuevo turno</button>
+        </div>
+      }
+
+      @if (isRescheduled) {
+        <div class="banner-cancelled">
+          <div class="banner-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="23 4 23 10 17 10"></polyline>
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+            </svg>
+          </div>
+          <div>
+            <div class="banner-title">Tu turno fue reagendado</div>
+            @if (userTurnScheduledFor) {
+              <div class="banner-sub">Nueva fecha: {{ userTurnScheduledFor }}</div>
+            }
+          </div>
+        </div>
+        <div class="action-row">
+          <button class="get-turn-btn" (click)="goBackToRequest()">Volver al inicio</button>
         </div>
       }
 

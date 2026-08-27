@@ -21,7 +21,7 @@ from collections import Counter
 from .fs_helpers import (
     get_turn_prefix, _fmt_time, _fmt_datetime, _fs_all_turns, _fs_all_users,
     _fs_get_user, _get_employee_sede_id, generate_turn_fb, broadcast_turn_update,
-    _sedes_map, _resolve_sede_name,
+    _sedes_map, _resolve_sede_name, validate_schedule_date,
 )
 from .turn_services import (
     create_turn_service, cancel_own_turn_service, get_my_active_turn_service,
@@ -787,6 +787,8 @@ def call_specific_turn(request):
 
 @csrf_exempt
 @api_view(['POST'])
+@jwt_required
+@role_required('admin', 'employee')
 def reschedule_current(request):
     token    = get_token_from_request(request)
     payload  = decode_access_token(token) if token else None
@@ -797,22 +799,27 @@ def reschedule_current(request):
     if not db:
         return Response({'success': False, 'message': 'Servicio no disponible'}, status=503)
 
+    iso_date, error = validate_schedule_date(request.data.get('scheduled_date', ''))
+    if error:
+        return Response({'success': False, 'message': error}, status=400)
+
     all_turns = _fs_all_turns()
     called = [t for t in all_turns if t.get('status') == 'called']
     if sede_id:
-        called = [t for t in called if t.get('sede_id') == sede_id or t.get('service_type') == 'virtual']
+        called = [t for t in called if t.get('sede_id') == sede_id]
     called.sort(key=lambda t: t.get('created_at', ''), reverse=True)
     if not called:
         return Response({'success': False, 'message': 'No hay turno en progreso'}, status=404)
 
     turn = called[0]
     db.collection('turns').document(turn['_doc_id']).update({
-        'status':         'waiting',
+        'status':         'rescheduled',
         'called_by':      '',
+        'scheduled_for':  iso_date,
         'rescheduled_at': timezone.now().isoformat()
     })
     broadcast_turn_update()
-    return Response({'success': True, 'number': turn.get('number')})
+    return Response({'success': True, 'number': turn.get('number'), 'scheduled_for': iso_date})
 
 
 @csrf_exempt
@@ -842,15 +849,18 @@ def reschedule_turn(request, turn_number):
     if not matches:
         return Response({'success': False, 'message': 'Turno no encontrado'}, status=404)
 
-    scheduled_date_str = request.data.get('scheduled_date', '')
+    iso_date, error = validate_schedule_date(request.data.get('scheduled_date', ''))
+    if error:
+        return Response({'success': False, 'message': error}, status=400)
+
     db.collection('turns').document(matches[0]['_doc_id']).update({
-        'status':          'waiting',
+        'status':          'rescheduled',
         'called_by':       '',
-        'scheduled_for':   scheduled_date_str,
+        'scheduled_for':   iso_date,
         'rescheduled_at':  timezone.now().isoformat()
     })
     broadcast_turn_update()
-    return Response({'success': True, 'message': 'Turno reagendado', 'scheduled_for': scheduled_date_str})
+    return Response({'success': True, 'message': 'Turno reagendado', 'scheduled_for': iso_date})
 
 
 @csrf_exempt

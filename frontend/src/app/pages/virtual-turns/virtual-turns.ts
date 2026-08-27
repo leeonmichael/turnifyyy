@@ -28,6 +28,10 @@ export class VirtualTurns implements OnInit, OnDestroy {
   finishing = false;
   sendingMessage = false;
 
+  showRescheduleForm = false;
+  rescheduleDate = '';
+  readonly todayIso = new Date().toISOString().slice(0, 10);
+
   // Combina las notas persistidas (chat_messages, compartido con el cliente)
   // con los avisos locales de sistema (turno iniciado/finalizado...), ordenado por hora.
   get displayMessages(): any[] {
@@ -259,11 +263,31 @@ export class VirtualTurns implements OnInit, OnDestroy {
     });
   }
 
-  rescheduleVirtual(): void {
+  openRescheduleForm(): void {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    this.rescheduleDate = d.toISOString().slice(0, 10);
+    this.showRescheduleForm = true;
+    this.cdr.detectChanges();
+  }
+
+  cancelRescheduleForm(): void {
+    this.showRescheduleForm = false;
+    this.rescheduleDate = '';
+    this.cdr.detectChanges();
+  }
+
+  confirmReschedule(): void {
     if (!this.activeVirtualTurn) return;
-    this.turn.rescheduleCurrent().subscribe({
-      next: () => {
-        this.addSystemMsg('Turno reagendado. Volverá al final de la cola.');
+    if (!this.rescheduleDate) { alert('Selecciona una fecha'); return; }
+    if (this.rescheduleDate < this.todayIso) { alert('No puedes reagendar para una fecha pasada'); return; }
+
+    this.turn.rescheduleCurrent(this.rescheduleDate).subscribe({
+      next: (data: any) => {
+        if (data.success === false) { alert(data.message || 'Error al reagendar turno'); return; }
+        this.showRescheduleForm = false;
+        this.rescheduleDate = '';
+        this.addSystemMsg(`Turno reagendado para el ${data.scheduled_for}.`);
         this.ws.send({ action: 'get_all' });
         this.cdr.detectChanges();
         setTimeout(() => {
@@ -273,7 +297,7 @@ export class VirtualTurns implements OnInit, OnDestroy {
           this.cdr.detectChanges();
         }, 1500);
       },
-      error: () => alert('Error al reagendar turno')
+      error: (err: any) => alert(err?.error?.message || 'Error al reagendar turno')
     });
   }
 
@@ -299,6 +323,8 @@ export class VirtualTurns implements OnInit, OnDestroy {
   closeChat(): void {
     this.activeVirtualTurn = null;
     this.systemMessages = [];
+    this.showRescheduleForm = false;
+    this.rescheduleDate = '';
     this.cdr.detectChanges();
   }
 }

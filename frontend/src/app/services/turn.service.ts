@@ -47,12 +47,12 @@ export class TurnService {
     return this.http.post(`${this.apiUrl}/finish/`, {}, { headers: this.getHeaders() });
   }
 
-  rescheduleCurrent(): Observable<any> {
-    return this.http.post(`${this.apiUrl}/reschedule/`, {}, { headers: this.getHeaders() });
+  rescheduleCurrent(scheduled_date: string): Observable<any> {
+    return this.http.post(`${this.apiUrl}/reschedule/`, { scheduled_date }, { headers: this.getHeaders() });
   }
 
-  rescheduleSpecificTurn(turn_number: string): Observable<any> {
-    return this.http.put(`${this.apiUrl}/reschedule-turn/${turn_number}/`, {}, { headers: this.getHeaders() });
+  rescheduleSpecificTurn(turn_number: string, scheduled_date: string): Observable<any> {
+    return this.http.put(`${this.apiUrl}/reschedule-turn/${turn_number}/`, { scheduled_date }, { headers: this.getHeaders() });
   }
 
   cancelCurrent(): Observable<any> {

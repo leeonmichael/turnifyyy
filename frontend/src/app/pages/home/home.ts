@@ -39,8 +39,9 @@ export class Home implements OnInit, OnDestroy {
   userTurn: string | null = null;
   userTurnSede = '';
   userTurnSedeId = '';
-  userTurnStatus = '';        // 'waiting' | 'called' | 'finished' | 'cancelled'
+  userTurnStatus = '';        // 'waiting' | 'called' | 'finished' | 'cancelled' | 'rescheduled'
   userTurnServiceType = '';
+  userTurnScheduledFor = '';
   positionNum = 0;
   turnsAhead = 0;
 
@@ -99,6 +100,7 @@ export class Home implements OnInit, OnDestroy {
   get isCloseSoon(): boolean { return this.userTurnStatus === 'waiting' && this.turnsAhead > 0 && this.turnsAhead <= 2; }
   get isWaitingFar(): boolean{ return this.userTurnStatus === 'waiting' && this.turnsAhead > 2; }
   get isFinished(): boolean  { return this.userTurnStatus === 'finished'; }
+  get isRescheduled(): boolean { return this.userTurnStatus === 'rescheduled'; }
 
   get waitingCount(): number {
     const base = this.turns.filter((t: any) => t.status === 'waiting');
@@ -266,12 +268,13 @@ export class Home implements OnInit, OnDestroy {
     if (mine.sede) this.userTurnSede = mine.sede;
     if (mine.sede_id) this.userTurnSedeId = mine.sede_id;
     if (mine.service_type) this.userTurnServiceType = mine.service_type;
+    if (mine.scheduled_for) this.userTurnScheduledFor = mine.scheduled_for;
     this.meetLink          = mine.meet_link || this.meetLink;
     this.uploadedDocuments = mine.uploaded_documents || this.uploadedDocuments;
     this.chatMessages      = mine.chat_messages || this.chatMessages;
     if (mine.required_documents && mine.required_documents.length) this.requiredDocuments = mine.required_documents;
 
-    if (mine.status === 'finished' || mine.status === 'cancelled') {
+    if (mine.status === 'finished' || mine.status === 'cancelled' || mine.status === 'rescheduled') {
       this.positionNum = 0;
       this.turnsAhead  = 0;
       return;
@@ -352,6 +355,7 @@ export class Home implements OnInit, OnDestroy {
     this.userTurnSedeId    = '';
     this.userTurnStatus    = '';
     this.userTurnServiceType = '';
+    this.userTurnScheduledFor = '';
     this.meetLink           = '';
     this.uploadedDocuments  = [];
     this.chatMessages       = [];

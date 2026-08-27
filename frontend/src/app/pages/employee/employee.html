@@ -25,22 +25,40 @@
   <div class="action-modal" *ngIf="showActionModal && currentTurn">
     <div class="action-modal-content">
       <h3>Opciones del Turno {{ currentTurn.number }}</h3>
-      <p class="action-subtitle">Selecciona una acción:</p>
-      <div class="action-buttons">
-        <button class="action-btn complete-btn" (click)="finishCurrent()">
-          <span class="action-icon">&#10003;</span>
-          <span>Completar</span>
-        </button>
-        <button class="action-btn reschedule-btn" (click)="rescheduleCurrent()">
-          <span class="action-icon">&#128197;</span>
-          <span>Reagendar</span>
-        </button>
-        <button class="action-btn cancel-btn" (click)="cancelCurrent()">
-          <span class="action-icon">&#10005;</span>
-          <span>Cancelar</span>
-        </button>
+
+      <div *ngIf="!showRescheduleForm">
+        <p class="action-subtitle">Selecciona una acción:</p>
+        <div class="action-buttons">
+          <button class="action-btn complete-btn" (click)="finishCurrent()">
+            <span class="action-icon">&#10003;</span>
+            <span>Completar</span>
+          </button>
+          <button class="action-btn reschedule-btn" (click)="openRescheduleForm()">
+            <span class="action-icon">&#128197;</span>
+            <span>Reagendar</span>
+          </button>
+          <button class="action-btn cancel-btn" (click)="cancelCurrent()">
+            <span class="action-icon">&#10005;</span>
+            <span>Cancelar</span>
+          </button>
+        </div>
+        <button class="close-modal-btn" (click)="closeActionModal()">Cerrar</button>
       </div>
-      <button class="close-modal-btn" (click)="showActionModal = false">Cerrar</button>
+
+      <div *ngIf="showRescheduleForm" class="reschedule-inline-form">
+        <p class="action-subtitle">¿Para qué fecha reagendamos este turno?</p>
+        <input type="date" [(ngModel)]="rescheduleDate" [min]="todayIso" class="date-input" />
+        <div class="action-buttons">
+          <button class="action-btn complete-btn" (click)="confirmReschedule()">
+            <span class="action-icon">&#10003;</span>
+            <span>Confirmar</span>
+          </button>
+          <button class="action-btn cancel-btn" (click)="cancelRescheduleForm()">
+            <span class="action-icon">&#10005;</span>
+            <span>Cancelar</span>
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -117,6 +135,7 @@
         <span class="legend-item"><span class="legend-dot ld-called"></span>Llamando</span>
         <span class="legend-item"><span class="legend-dot ld-finished"></span>Atendido</span>
         <span class="legend-item"><span class="legend-dot ld-cancelled"></span>Cancelado</span>
+        <span class="legend-item"><span class="legend-dot ld-rescheduled"></span>Reagendado</span>
       </div>
     </div>
 
@@ -137,7 +156,8 @@
               [class.row-waiting]="turn.status === 'waiting'"
               [class.row-called]="turn.status === 'called'"
               [class.row-finished]="turn.status === 'finished'"
-              [class.row-cancelled]="turn.status === 'cancelled'">
+              [class.row-cancelled]="turn.status === 'cancelled'"
+              [class.row-rescheduled]="turn.status === 'rescheduled'">
 
             <!-- Número de turno -->
             <td class="td-num">
@@ -145,7 +165,8 @@
                     [class.num-waiting]="turn.status === 'waiting'"
                     [class.num-called]="turn.status === 'called'"
                     [class.num-finished]="turn.status === 'finished'"
-                    [class.num-cancelled]="turn.status === 'cancelled'">
+                    [class.num-cancelled]="turn.status === 'cancelled'"
+                    [class.num-rescheduled]="turn.status === 'rescheduled'">
                 {{ turn.number }}
               </span>
             </td>
@@ -177,12 +198,14 @@
                     [class.status-waiting]="turn.status === 'waiting'"
                     [class.status-calling]="turn.status === 'called'"
                     [class.status-completed]="turn.status === 'finished'"
-                    [class.status-cancelled]="turn.status === 'cancelled'">
+                    [class.status-cancelled]="turn.status === 'cancelled'"
+                    [class.status-rescheduled]="turn.status === 'rescheduled'">
                 <span class="status-dot"></span>
                 {{ turn.status === 'waiting' ? 'En espera' :
                    turn.status === 'called' ? 'Llamando' :
                    turn.status === 'finished' ? 'Atendido' :
-                   turn.status === 'cancelled' ? 'Cancelado' : turn.status }}
+                   turn.status === 'cancelled' ? 'Cancelado' :
+                   turn.status === 'rescheduled' ? 'Reagendado' : turn.status }}
               </span>
             </td>
 

@@ -22,16 +22,23 @@
         <button class="btn-close-chat" (click)="closeChat()" title="Volver a lista">✕</button>
       </div>
 
-      <div class="chat-actions-bar">
+      <div class="chat-actions-bar" *ngIf="!showRescheduleForm">
         <button class="chat-action-btn btn-finish" (click)="finishVirtual()" [disabled]="finishing">
           ✓ Finalizar
         </button>
-        <button class="chat-action-btn btn-reschedule" (click)="rescheduleVirtual()">
+        <button class="chat-action-btn btn-reschedule" (click)="openRescheduleForm()">
           Reagendar
         </button>
         <button class="chat-action-btn btn-cancel" (click)="cancelVirtual()">
           ✗ No llegó
         </button>
+      </div>
+
+      <div class="chat-actions-bar reschedule-inline-bar" *ngIf="showRescheduleForm">
+        <span class="reschedule-inline-label">¿Para qué fecha?</span>
+        <input type="date" [(ngModel)]="rescheduleDate" [min]="todayIso" class="date-input" />
+        <button class="chat-action-btn btn-finish" (click)="confirmReschedule()">✓ Confirmar</button>
+        <button class="chat-action-btn btn-cancel" (click)="cancelRescheduleForm()">✗ Cancelar</button>
       </div>
 
       <div class="meet-bar" *ngIf="activeVirtualTurn.meet_link">

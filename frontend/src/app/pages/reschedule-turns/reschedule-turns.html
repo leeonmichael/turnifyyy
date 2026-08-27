@@ -37,7 +37,7 @@
           <td>
             <!-- Formulario de reagendar inline -->
             <div *ngIf="rescheduleTarget === turn.number" class="reschedule-form">
-              <input type="datetime-local" [(ngModel)]="rescheduleDate" class="date-input" />
+              <input type="date" [(ngModel)]="rescheduleDate" [min]="todayIso" class="date-input" />
               <div class="form-btns">
                 <button (click)="confirmReschedule(turn.number)" class="btn btn-success btn-sm">✓ Confirmar</button>
                 <button (click)="cancelReschedule()" class="btn btn-secondary btn-sm">Cancelar</button>

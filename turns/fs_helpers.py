@@ -40,6 +40,29 @@ def _fmt_datetime(iso_str: str) -> str:
         return str(iso_str)
 
 
+def _fmt_date(date_str: str) -> str:
+    """Como _fmt_datetime pero solo fecha (scheduled_for es date-only, 'YYYY-MM-DD')."""
+    if not date_str:
+        return ''
+    try:
+        return datetime.strptime(str(date_str), '%Y-%m-%d').strftime('%d/%m/%Y')
+    except Exception:
+        return str(date_str)
+
+
+def validate_schedule_date(date_str: str) -> tuple:
+    """(fecha_iso, None) si es válida y no es pasada; (None, mensaje_error) si no."""
+    if not date_str:
+        return None, 'Debes indicar una fecha'
+    try:
+        d = datetime.strptime(str(date_str), '%Y-%m-%d').date()
+    except ValueError:
+        return None, 'Fecha inválida'
+    if d < timezone.now().date():
+        return None, 'No puedes reagendar para una fecha pasada'
+    return d.isoformat(), None
+
+
 def _fs_all_turns():
     """Fetch all turns from Firestore as list of dicts (with _doc_id)."""
     if not db:
@@ -143,7 +166,7 @@ def broadcast_turn_update():
                 'created_at':   _fmt_time(t.get('created_at', '')),
                 'called_by':    t.get('called_by', ''),
                 'created_by':   t.get('created_by', ''),
-                'scheduled_for':_fmt_datetime(t.get('scheduled_for', '')),
+                'scheduled_for':_fmt_date(t.get('scheduled_for', '')),
                 'meet_link':          t.get('meet_link', ''),
                 'required_documents': t.get('required_documents', []),
                 'uploaded_documents': t.get('uploaded_documents', []),

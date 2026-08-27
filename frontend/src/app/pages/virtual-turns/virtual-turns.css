@@ -240,6 +240,33 @@
 .btn-cancel { background: #ef4444; color: white; }
 .btn-cancel:hover { background: #dc2626; }
 
+.reschedule-inline-bar {
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.reschedule-inline-label {
+  color: #334155;
+  font-weight: 600;
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.reschedule-inline-bar .date-input {
+  padding: 0.5rem 0.75rem;
+  border: 1.5px solid #4a90f7;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  outline: none;
+  color: #1e293b;
+  background: white;
+}
+
+.reschedule-inline-bar .date-input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(74, 144, 247, 0.15);
+}
+
 /* Mensajes */
 .chat-messages {
   flex: 1;

@@ -94,7 +94,7 @@ export class MyTurns implements OnInit, OnDestroy {
   }
 
   get activeCount(): number {
-    return this.turns.filter(t => t.status === 'waiting' || t.status === 'called').length;
+    return this.turns.filter(t => t.status === 'waiting' || t.status === 'called' || t.status === 'rescheduled').length;
   }
 
   get finishedCount(): number {

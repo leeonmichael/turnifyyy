@@ -163,6 +163,7 @@
 .item-called   .accent-bar { background: #ef4444; }
 .item-finished .accent-bar { background: #10b981; }
 .item-cancelled .accent-bar { background: #cbd5e1; }
+.item-rescheduled .accent-bar { background: #1d4ed8; }
 
 /* Turn number column */
 .turn-number-col {
