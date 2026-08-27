@@ -30,7 +30,7 @@ from .turn_services import (
     get_all_turns_service, get_statistics_service, VIRTUAL_REQUIRED_DOCUMENTS,
 )
 from .storage_helpers import upload_virtual_document_file
-from .ai_assistant import get_chatbot_reply_stream, get_proactive_message, AIUnavailableError
+from .ai_assistant import get_chatbot_reply_stream, get_proactive_message, transcribe_audio, AIUnavailableError
 
 
 # ─── Page views ──────────────────────────────────────────────────────────────
@@ -1307,6 +1307,71 @@ def chatbot_view(request):
         return ai_unavailable_response
 
     def event_stream():
+        yield json.dumps(first_event) + '\n'
+        for event in gen:
+            yield json.dumps(event) + '\n'
+
+    return StreamingHttpResponse(event_stream(), content_type='application/x-ndjson')
+
+
+@csrf_exempt
+@jwt_required
+def chatbot_voice_view(request):
+    """Chat por voz: recibe una nota de voz grabada en el navegador
+    (MediaRecorder, multipart/form-data), la transcribe con Gemini y
+    reenvía esa transcripción a la MISMA lógica de get_chatbot_reply_stream
+    que usa el chat escrito (mismas herramientas, mismo alcance). Así se
+    evita el reconocimiento de voz nativo del navegador, que depende de un
+    servicio en la nube de Google aparte y puede fallar por red."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Método no permitido'}, status=405)
+
+    payload  = request.jwt_payload
+    username = payload.get('username', '')
+    role     = payload.get('role', 'client')
+
+    audio_file = request.FILES.get('audio')
+    if not audio_file:
+        return JsonResponse({'error': 'Audio requerido'}, status=400)
+
+    try:
+        history = json.loads(request.POST.get('history') or '[]')
+    except (ValueError, TypeError):
+        history = []
+
+    ai_unavailable_response = JsonResponse({
+        'error': 'ai_unavailable',
+        'message': 'El asistente de voz no está disponible en este momento. '
+                   'Intenta de nuevo o escribe tu mensaje.',
+    }, status=503)
+
+    try:
+        transcript = transcribe_audio(audio_file.read(), audio_file.content_type or 'audio/webm')
+    except AIUnavailableError:
+        return ai_unavailable_response
+
+    # Si la transcripción es el centinela SIN_AUDIO (así lo pide el prompt de
+    # transcribe_audio cuando no hay voz entendible) o no tiene ninguna
+    # palabra real (p. ej. "00:00", "..." de ruido/silencio mal interpretado),
+    # no tiene sentido pasarla al chat: respondería a un texto sin sentido en
+    # vez de avisar que no entendió el audio.
+    if not transcript or transcript.strip().upper() == 'SIN_AUDIO' or not re.search(r'[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ]{2,}', transcript):
+        return JsonResponse({
+            'error': 'empty_transcript',
+            'message': 'No logré entender el audio. Intenta de nuevo hablando un poco más claro.',
+        }, status=422)
+
+    gen = get_chatbot_reply_stream(message=transcript, history=history, username=username, role=role)
+
+    try:
+        first_event = next(gen)
+    except AIUnavailableError:
+        return ai_unavailable_response
+    except StopIteration:
+        return ai_unavailable_response
+
+    def event_stream():
+        yield json.dumps({'type': 'transcript', 'text': transcript}) + '\n'
         yield json.dumps(first_event) + '\n'
         for event in gen:
             yield json.dumps(event) + '\n'

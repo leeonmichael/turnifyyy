@@ -8,6 +8,7 @@ Las herramientas del modelo llaman a turns/turn_services.py — la misma capa
 que usan los endpoints HTTP — para que el chatbot y el resto de la app nunca
 diverjan en cómo se crea, cancela o consulta un turno.
 """
+import time
 from django.conf import settings
 from .turn_services import (
     create_turn_service, cancel_own_turn_service, get_my_active_turn_service,
@@ -44,7 +45,16 @@ def _get_client():
         _client = None
         return None
     try:
-        _client = google.genai.Client(api_key=api_key)
+        _client = google.genai.Client(
+            api_key=api_key,
+            http_options=types.HttpOptions(
+                timeout=15000,
+                retry_options=types.HttpRetryOptions(
+                    attempts=3, initial_delay=0.5, max_delay=3, exp_base=2,
+                    http_status_codes=[429, 500, 502, 503, 504],
+                ),
+            ),
+        )
     except Exception:
         _client = None
     return _client
@@ -56,6 +66,28 @@ preguntan tu nombre, respondes que eres TURNITY. Respondes siempre
 íntegramente en español (nunca mezcles palabras en inglés como "Option", usa
 "Opción"), con un tono cercano, claro y profesional, apto también para personas de
 la tercera edad que no dominan la tecnología.
+
+ALCANCE (regla más importante, NO la rompas nunca): tu única función es informar
+y ejecutar acciones sobre el sistema de gestión de turnos de Turnify Pro
+(agendar, consultar, cancelar turnos; documentos; horarios; sedes; atención
+preferencial; modalidad virtual; estadísticas para personal autorizado). No eres
+un asistente de propósito general. Si te preguntan cualquier cosa fuera de este
+alcance (cultura general, noticias, fechas conmemorativas, deportes, clima,
+política, entretenimiento, tareas académicas, programación, opiniones
+personales, o cualquier otro tema sin relación directa con el sistema de
+turnos), NO la respondas aunque conozcas la respuesta. En su lugar contesta,
+con una sola frase breve y sin rodeos, algo equivalente a: "Mi función es
+exclusivamente ayudarte con el sistema de gestión de turnos de Turnify Pro; con
+gusto te oriento sobre cómo agendar, consultar o cancelar un turno, documentos,
+horarios o sedes." No te disculpes en exceso ni especules sobre el tema fuera de
+alcance: redirige de inmediato hacia lo que sí puedes hacer. Ante un mensaje
+ambiguo que pudiera relacionarse con turnos, interpreta primero en ese sentido
+antes de descartarlo como fuera de alcance.
+
+PRECISIÓN: cuando la pregunta sí sea sobre el sistema, responde de forma
+concreta y exacta, sin relleno ni generalidades. Nunca inventes números de
+turno, posiciones, horarios ni estados: si el dato es real, consúltalo con la
+herramienta correspondiente antes de responder.
 
 ESTILO DE RESPUESTA: nunca uses emojis ni íconos (nada de 🤖, 📌, 🔔, etc.). Usa
 formato Markdown sobrio (negritas, listas, encabezados) sin adornos visuales
@@ -86,7 +118,12 @@ que te está escribiendo. Úsalas siempre que el usuario pida una acción o un d
 herramienta correspondiente). Nunca pidas ni reveles contraseñas, tokens, ni datos
 de otros usuarios. Si una herramienta devuelve un error, explícaselo al usuario de
 forma amable y, si aplica, sugiere una alternativa (por ejemplo, si ya tiene un
-turno activo, dile cuál es en vez de intentar crear otro)."""
+turno activo, dile cuál es en vez de intentar crear otro).
+
+La herramienta mostrar_opciones es distinta a las demás: no ejecuta nada sobre
+turnos, solo dibuja botones en la interfaz. Úsala en casi toda pregunta cerrada
+que le hagas al usuario (tipo de turno, presencial/virtual, confirmar sí o no,
+elegir una sede) para que pueda responder con un toque en vez de escribir."""
 
 
 def _client_tool_declarations():
@@ -127,6 +164,27 @@ def _client_tool_declarations():
             name="listar_sedes",
             description="Lista las sedes disponibles.",
             parameters=types.Schema(type="OBJECT", properties={}, required=[]),
+        ),
+        types.FunctionDeclaration(
+            name="mostrar_opciones",
+            description=(
+                "Muestra un conjunto pequeño y cerrado de opciones como botones "
+                "para que el usuario elija con un solo toque, en vez de tener que "
+                "escribir o hablar. Úsala SIEMPRE que hagas una pregunta con "
+                "respuestas predefinidas y excluyentes (tipo de turno, presencial "
+                "o virtual, sí/no, confirmar una acción, elegir una sede, etc.). "
+                "No la uses para preguntas abiertas (pedir un nombre, un número "
+                "de turno específico, una fecha libre). Llama a esta herramienta "
+                "y luego, en el mismo turno, escribe tú la pregunta en texto — "
+                "las opciones no reemplazan la pregunta, la acompañan."
+            ),
+            parameters=types.Schema(type="OBJECT", properties={
+                "opciones": types.Schema(
+                    type="ARRAY",
+                    items=types.Schema(type="STRING"),
+                    description="Entre 2 y 4 opciones cortas, tal como deben verse en los botones, ej: [\"Presencial\", \"Virtual\"].",
+                ),
+            }, required=["opciones"]),
         ),
     ]
 
@@ -296,25 +354,58 @@ def get_chatbot_reply_stream(message: str, history: list, username: str, role: s
     contents, config = _build_request(message, history, username, role)
     actions_taken = []
 
+    ROUND_ATTEMPTS = 2
+
     try:
         for _ in range(MAX_TOOL_ROUNDS):
-            stream = client.models.generate_content_stream(
-                model=settings.GEMINI_MODEL, contents=contents, config=config,
-            )
-
+            # Cada ronda se intenta hasta ROUND_ATTEMPTS veces ANTES de
+            # transmitir nada al usuario: Gemini a veces corta el stream a
+            # mitad de una oración (fallo transitorio, no relacionado con el
+            # contenido). Si eso pasa, se descarta lo recibido y se reintenta
+            # desde cero en silencio, en vez de dejarle al usuario una
+            # respuesta truncada a medias.
             fc = None
             fc_content = None
-            any_text = False
+            pieces: list[str] = []
+            last_error: Exception | None = None
 
-            for chunk in stream:
-                if chunk.function_calls:
-                    fc = chunk.function_calls[0]
-                    fc_content = chunk.candidates[0].content
+            for attempt in range(ROUND_ATTEMPTS):
+                fc = None
+                fc_content = None
+                pieces = []
+                try:
+                    stream = client.models.generate_content_stream(
+                        model=settings.GEMINI_MODEL, contents=contents, config=config,
+                    )
+                    for chunk in stream:
+                        if chunk.function_calls:
+                            fc = chunk.function_calls[0]
+                            fc_content = chunk.candidates[0].content
+                            break
+                        piece = chunk.text or ''
+                        if piece:
+                            pieces.append(piece)
+                    last_error = None
                     break
-                piece = chunk.text or ''
-                if piece:
-                    any_text = True
-                    yield {'type': 'chunk', 'text': piece}
+                except Exception as e:
+                    last_error = e
+                    if attempt == ROUND_ATTEMPTS - 1:
+                        break
+                    time.sleep(0.4 * (attempt + 1))
+
+            if last_error is not None:
+                # Se agotaron los reintentos: si alcanzó a juntar algo de
+                # texto en el último intento, se muestra igual (mejor eso que
+                # nada), avisando que se cortó la conexión.
+                if pieces:
+                    yield {'type': 'chunk', 'text': ''.join(pieces)}
+                yield {'type': 'error', 'message': str(last_error)}
+                return
+
+            any_text = False
+            for piece in pieces:
+                any_text = True
+                yield {'type': 'chunk', 'text': piece}
 
             if fc is None:
                 if not any_text:
@@ -323,7 +414,17 @@ def get_chatbot_reply_stream(message: str, history: list, username: str, role: s
                 return
 
             args = dict(fc.args) if fc.args else {}
-            result = _execute_tool(fc.name, args, username, role)
+
+            if fc.name == "mostrar_opciones":
+                # No es una acción real sobre turnos: solo le indica al
+                # frontend qué botones mostrar junto a la pregunta que el
+                # modelo hace a continuación en texto.
+                opciones = [str(o).strip() for o in (args.get("opciones") or []) if str(o).strip()][:4]
+                if opciones:
+                    yield {'type': 'options', 'options': opciones}
+                result = {"shown": bool(opciones)}
+            else:
+                result = _execute_tool(fc.name, args, username, role)
             actions_taken.append({"tool": fc.name, "args": args, "result": result})
 
             contents.append(fc_content)
@@ -335,6 +436,50 @@ def get_chatbot_reply_stream(message: str, history: list, username: str, role: s
         yield {'type': 'done', 'actions_taken': actions_taken}
     except Exception as e:
         yield {'type': 'error', 'message': str(e)}
+
+
+def transcribe_audio(audio_bytes: bytes, mime_type: str) -> str:
+    """Transcribe una nota de voz grabada en el navegador (MediaRecorder) a
+    texto en español. Se usa como primer paso del chat por voz: el texto
+    resultante se pasa tal cual a get_chatbot_reply_stream, así el chat de
+    voz reutiliza exactamente la misma lógica (alcance, herramientas,
+    contexto) que el chat escrito, sin duplicarla."""
+    client = _get_client()
+    if not client:
+        raise AIUnavailableError("Cliente de Gemini no configurado")
+
+    try:
+        response = client.models.generate_content(
+            model=settings.GEMINI_MODEL,
+            contents=[types.Content(role='user', parts=[
+                types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
+                types.Part.from_text(text=(
+                    "Transcribe textualmente, en español, lo que dice esta nota de "
+                    "voz. Responde ÚNICAMENTE con la transcripción, sin comentarios, "
+                    "sin comillas ni formato adicional. Si hay ruido de fondo o "
+                    "silencio al inicio/final, ignóralo y transcribe solo la voz. Si "
+                    "el audio está vacío, es silencio, o no contiene ninguna voz "
+                    "humana entendible, responde EXACTAMENTE con la palabra "
+                    "SIN_AUDIO y nada más (ni explicaciones, ni disculpas)."
+                )),
+            ])],
+            # Presupuesto de tiempo más ajustado que el del cliente: es un paso
+            # previo y liviano (transcripción corta) — si Gemini está saturado
+            # que falle rápido aquí, en vez de agotar medio timeout del proxy
+            # antes siquiera de llegar a la respuesta real del chat.
+            config=types.GenerateContentConfig(
+                http_options=types.HttpOptions(
+                    timeout=10000,  # 10s es el mínimo que acepta la API (400 si es menor)
+                    retry_options=types.HttpRetryOptions(
+                        attempts=3, initial_delay=0.3, max_delay=1.5, exp_base=2,
+                        http_status_codes=[429, 500, 502, 503, 504],
+                    ),
+                ),
+            ),
+        )
+        return (response.text or '').strip()
+    except Exception as e:
+        raise AIUnavailableError(str(e))
 
 
 def get_proactive_message(turn_number: str, position: int) -> str:

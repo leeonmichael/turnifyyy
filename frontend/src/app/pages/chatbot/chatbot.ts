@@ -12,6 +12,10 @@ interface ChatMessage {
   text:      string;
   time:      string;
   typing?:   boolean;
+  // Botones de respuesta rápida que TURNITY ofrece para preguntas cerradas
+  // (ver herramienta "mostrar_opciones" en el backend). Se vacía una vez
+  // que el usuario elige una, para no dejar botones "viejos" clicables.
+  options?:  string[];
 }
 
 @Component({
@@ -42,13 +46,24 @@ export class Chatbot implements OnInit, AfterViewChecked {
   currentUser: any = null;
 
   // ── Voz ──────────────────────────────────────────────────────────────
+  // Se graba el audio con MediaRecorder y se envía tal cual al backend
+  // (/api/chatbot/voice/), donde Gemini lo transcribe y ejecuta la acción
+  // pedida en el mismo paso. Así se evita el SpeechRecognition nativo del
+  // navegador, que depende de un servicio de voz de Google aparte y puede
+  // fallar por restricciones de red ajenas a esta app.
   micSupported     = false;
   speechSupported   = typeof window !== 'undefined' && 'speechSynthesis' in window;
   isListening       = false;
+  isSpeaking        = false;
   voiceEnabled      = false;
   micError: string | null = null;
-  private recognition: any = null;
-  private speechRecognitionCtor: any = null;
+  private mediaRecorder: MediaRecorder | null = null;
+  private audioChunks: Blob[] = [];
+  private mediaStream: MediaStream | null = null;
+  private recordingTimeout: any = null;
+  private recordingStartedAt = 0;
+  private static readonly MAX_RECORDING_MS = 20000;
+  private static readonly MIN_RECORDING_MS = 500;
 
   constructor(
     private router: Router,
@@ -61,13 +76,23 @@ export class Chatbot implements OnInit, AfterViewChecked {
   ngOnInit(): void {
     this.currentUser = this.auth.getCurrentUser();
     this.voiceEnabled = localStorage.getItem('turnify_voice_enabled') === 'true';
-    this.setupSpeechRecognition();
+    this.setupMicSupport();
+    // Chrome carga la lista de voces de forma asíncrona — se "calienta" acá
+    // para que ya esté disponible la primera vez que el bot tenga que hablar.
+    if (this.speechSupported) {
+      window.speechSynthesis.getVoices();
+      window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+    }
 
-    // Mensaje de bienvenida del bot
-    const name = this.currentUser?.full_name?.split(' ')[0] || 'amigo/a';
-    this.addBotMessage(
-      `¡Hola${name ? ', ' + name : ''}! Soy TURNITY, tu asistente virtual. Estoy aquí para ayudarte a:\n\n• Agendar y gestionar tu turno\n• Resolver dudas sobre el proceso\n• Orientar a personas de la tercera edad\n\n¿En qué te puedo ayudar hoy?`
-    );
+    // Si ya había una conversación guardada (p. ej. el usuario salió del
+    // chat y volvió), se restaura tal cual en vez de mostrar el saludo
+    // inicial de nuevo.
+    if (!this.restoreHistory()) {
+      const name = this.currentUser?.full_name?.split(' ')[0] || 'amigo/a';
+      this.addBotMessage(
+        `¡Hola${name ? ', ' + name : ''}! Soy TURNITY, tu asistente virtual. Estoy aquí para ayudarte a:\n\n• Agendar y gestionar tu turno\n• Resolver dudas sobre el proceso\n• Orientar a personas de la tercera edad\n\n¿En qué te puedo ayudar hoy?`
+      );
+    }
 
     // Avisos proactivos generados mientras el usuario no tenía el chat abierto
     // (ver home.ts, se disparan cuando el turno está por ser llamado).
@@ -76,81 +101,181 @@ export class Chatbot implements OnInit, AfterViewChecked {
     }
   }
 
-  private setupSpeechRecognition(): void {
-    this.speechRecognitionCtor =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    this.micSupported = !!this.speechRecognitionCtor;
+  private setupMicSupport(): void {
+    this.micSupported = typeof window !== 'undefined'
+      && !!navigator.mediaDevices?.getUserMedia
+      && !!(window as any).MediaRecorder;
   }
 
-  // Chrome se pone inestable si se reutiliza la misma instancia de
-  // SpeechRecognition entre varios start()/stop() (a veces "arranca" y
-  // vuelve a cortar sola casi de inmediato) — por eso se crea una instancia
-  // nueva cada vez que el usuario le da al micrófono.
-  private createRecognition(): any {
-    const recognition = new this.speechRecognitionCtor();
-    recognition.lang = 'es-ES';
-    recognition.continuous = true;
-    recognition.interimResults = false;
-
-    recognition.onresult = (event: any) => {
-      // En modo continuo, event.results va creciendo con cada frase — solo
-      // se toman las entradas nuevas desde resultIndex para no repetir texto.
-      let newText = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        if (event.results[i].isFinal) {
-          newText += event.results[i][0].transcript;
-        }
-      }
-      if (newText) {
-        this.userInput = (this.userInput ? this.userInput.trimEnd() + ' ' : '') + newText.trim();
-        this.cdr.detectChanges();
-      }
-    };
-    recognition.onerror = (event: any) => {
-      this.isListening = false;
-      this.micError = this.describeMicError(event?.error);
-      this.cdr.detectChanges();
-    };
-    recognition.onend = () => {
-      this.isListening = false;
-      this.cdr.detectChanges();
-    };
-    return recognition;
+  private pickSupportedMimeType(): string | undefined {
+    const MR: any = (window as any).MediaRecorder;
+    const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
+    return candidates.find(c => MR?.isTypeSupported?.(c));
   }
 
-  private describeMicError(code: string): string | null {
+  private describeMicError(code: string | undefined): string | null {
     switch (code) {
-      case 'not-allowed':
-      case 'service-not-allowed':
+      case 'NotAllowedError':
+      case 'PermissionDeniedError':
+      case 'SecurityError':
         return 'No tengo permiso para usar el micrófono. Revisa el ícono de candado/cámara en la barra de direcciones de tu navegador y permite el acceso al micrófono para este sitio.';
-      case 'audio-capture':
+      case 'NotFoundError':
+      case 'DevicesNotFoundError':
         return 'No se detectó ningún micrófono conectado en tu dispositivo.';
-      case 'network':
-        return 'Hubo un problema de conexión con el servicio de reconocimiento de voz. Intenta de nuevo.';
-      case 'no-speech':
-        return null; // No dijiste nada — no es realmente un error, no hace falta mostrar nada.
+      case 'NotReadableError':
+      case 'TrackStartError':
+        return 'No se pudo acceder al micrófono. Puede estar siendo usado por otra aplicación.';
       default:
         return 'No se pudo activar el micrófono. Intenta de nuevo.';
     }
   }
 
-  toggleListening(): void {
-    if (!this.micSupported) return;
+  // Al soltar/tocar de nuevo el micrófono se detiene la grabación y el audio
+  // se envía automáticamente al asistente (ver sendVoiceMessage) — no hace
+  // falta escribir ni presionar "Enviar", como en una conversación real.
+  async toggleListening(): Promise<void> {
+    if (!this.micSupported || this.isTyping) return;
     if (this.isListening) {
-      this.recognition?.stop();
-      this.isListening = false;
+      this.mediaRecorder?.stop();
       return;
     }
+    // Evita iniciar una segunda grabación mientras la anterior sigue
+    // arrancando (p. ej. un doble toque accidental) — eso producía
+    // grabaciones casi vacías que Gemini transcribía como ruido sin sentido.
+    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') return;
+
     this.micError = null;
-    this.recognition = this.createRecognition();
     try {
-      this.recognition.start();
+      this.mediaStream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+      this.audioChunks = [];
+      const mimeType = this.pickSupportedMimeType();
+      this.mediaRecorder = mimeType ? new MediaRecorder(this.mediaStream, { mimeType }) : new MediaRecorder(this.mediaStream);
+
+      this.mediaRecorder.ondataavailable = (e: BlobEvent) => {
+        if (e.data && e.data.size > 0) this.audioChunks.push(e.data);
+      };
+      this.mediaRecorder.onstop = () => {
+        clearTimeout(this.recordingTimeout);
+        this.mediaStream?.getTracks().forEach(t => t.stop());
+        this.mediaStream = null;
+        this.isListening = false;
+        const durationMs = Date.now() - this.recordingStartedAt;
+        const blob = new Blob(this.audioChunks, { type: this.mediaRecorder?.mimeType || 'audio/webm' });
+        this.audioChunks = [];
+        // Toque accidental o soltado casi al instante: no hay suficiente
+        // audio real para transcribir (antes esto se enviaba igual y
+        // Gemini "inventaba" una transcripción sin sentido a partir de
+        // silencio/ruido, lo que confundía al asistente).
+        if (durationMs < Chatbot.MIN_RECORDING_MS || blob.size < 1000) {
+          this.micError = 'No alcancé a grabar nada. Toca el micrófono, espera el "Grabando..." y habla con calma.';
+          this.cdr.detectChanges();
+          return;
+        }
+        this.cdr.detectChanges();
+        this.sendVoiceMessage(blob);
+      };
+
+      this.mediaRecorder.start();
       this.isListening = true;
-    } catch {
+      this.recordingStartedAt = Date.now();
+      // Corte de seguridad por si el usuario olvida detener la grabación.
+      this.recordingTimeout = setTimeout(() => this.mediaRecorder?.stop(), Chatbot.MAX_RECORDING_MS);
+    } catch (err: any) {
       this.isListening = false;
-      this.micError = 'No se pudo activar el micrófono. Intenta de nuevo.';
+      this.micError = this.describeMicError(err?.name);
     }
     this.cdr.detectChanges();
+  }
+
+  private sendVoiceMessage(blob: Blob): void {
+    this.isTyping = true;
+    this.cdr.detectChanges();
+
+    const history = this.messages
+      .filter(m => !m.typing)
+      .slice(-10)
+      .map(m => ({ role: m.role, text: m.text }));
+
+    const form = new FormData();
+    form.append('audio', blob, 'voice-message.webm');
+    form.append('history', JSON.stringify(history));
+
+    let userMsg: ChatMessage | null = null;
+    let botMsg: ChatMessage | null = null;
+    let pendingOptions: string[] | null = null;
+    let processedLength = 0;
+    let hadStreamError = false;
+
+    this.http.post('/api/chatbot/voice/', form, {
+      observe: 'events',
+      responseType: 'text',
+      reportProgress: true,
+    }).subscribe({
+      next: (event) => {
+        if (event.type === HttpEventType.DownloadProgress) {
+          const partial = (event as HttpDownloadProgressEvent).partialText || '';
+          const newText = partial.slice(processedLength);
+          processedLength = partial.length;
+          if (!newText) return;
+
+          for (const line of newText.split('\n')) {
+            if (!line.trim()) continue;
+            let evt: any;
+            try { evt = JSON.parse(line); } catch { continue; }
+
+            if (evt.type === 'transcript') {
+              this.isTyping = false;
+              userMsg = { id: ++this.msgId, role: 'user', text: evt.text, time: this.now() };
+              this.messages.push(userMsg);
+              this.isTyping = true;
+              this.cdr.detectChanges();
+            } else if (evt.type === 'chunk') {
+              if (!botMsg) {
+                this.isTyping = false;
+                botMsg = { id: ++this.msgId, role: 'bot', text: '', time: this.now(), options: pendingOptions || undefined };
+                this.messages.push(botMsg);
+              }
+              botMsg.text += evt.text;
+              this.cdr.detectChanges();
+            } else if (evt.type === 'options') {
+              pendingOptions = Array.isArray(evt.options) ? evt.options : null;
+              if (botMsg && pendingOptions) botMsg.options = pendingOptions;
+            } else if (evt.type === 'error') {
+              hadStreamError = true;
+            }
+          }
+        } else if (event.type === HttpEventType.Response) {
+          this.isTyping = false;
+          if (botMsg) {
+            const finalMsg = botMsg;
+            if (hadStreamError && !finalMsg.text) {
+              this.messages = this.messages.filter(m => m !== finalMsg);
+              this.addBotMessage(this.generateLocalResponse(userMsg?.text || ''));
+            } else {
+              if (hadStreamError) finalMsg.text += '\n\n_(se interrumpió la conexión con el asistente)_';
+              // En un mensaje de voz siempre se responde en voz, independiente
+              // del interruptor de lectura (el usuario está hablando, no escribiendo).
+              this.speak(finalMsg.text);
+            }
+          } else if (!userMsg) {
+            this.addBotMessage(this.generateLocalResponse(''));
+          }
+          this.persistHistory();
+          this.cdr.detectChanges();
+        }
+      },
+      error: (err) => {
+        this.isTyping = false;
+        let message = '';
+        try { message = JSON.parse(err?.error)?.message || ''; } catch {}
+        setTimeout(() => {
+          this.addBotMessage(message || this.generateLocalResponse(''));
+          this.cdr.detectChanges();
+        }, 300);
+      }
+    });
   }
 
   toggleVoice(): void {
@@ -158,21 +283,83 @@ export class Chatbot implements OnInit, AfterViewChecked {
     localStorage.setItem('turnify_voice_enabled', String(this.voiceEnabled));
     if (!this.voiceEnabled) {
       window.speechSynthesis?.cancel();
+      this.isSpeaking = false;
     }
+  }
+
+  // Prioriza voces LOCALES (no dependen de un servicio en la nube, a
+  // diferencia de las voces "en línea" tipo Google que algunos navegadores
+  // ofrecen) — así la lectura en voz alta no hereda los mismos problemas de
+  // red que ya tuvimos con el reconocimiento de voz. Entre las locales,
+  // prioriza español de España y luego cualquier español disponible.
+  private pickBestVoice(): SpeechSynthesisVoice | null {
+    const voices = window.speechSynthesis.getVoices();
+    const esVoices = voices.filter(v => v.lang?.toLowerCase().startsWith('es'));
+    if (!esVoices.length) return null;
+    const candidates = [
+      ...esVoices.filter(v => v.localService && /es-es/i.test(v.lang)),
+      ...esVoices.filter(v => v.localService && /es-(419|mx|us|co|ar)/i.test(v.lang)),
+      ...esVoices.filter(v => v.localService),
+      ...esVoices,
+    ];
+    return candidates[0] ?? null;
+  }
+
+  // Quita marcas de Markdown y normaliza saltos de línea a pausas, para que
+  // no se lean símbolos sueltos ("asterisco", "numeral") ni se atropelle
+  // todo el texto como un único bloque corrido.
+  private sanitizeForSpeech(text: string): string {
+    return text
+      .replace(/\[([^\]]+)\]\(https?:\/\/[^)]+\)/g, '$1')
+      .replace(/https?:\/\/\S+/g, '')
+      .replace(/[*_#>`~]/g, '')
+      .replace(/^\s*[-•]\s+/gm, '')
+      .replace(/\n{2,}/g, '. ')
+      .replace(/\n/g, ', ')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
   }
 
   private speak(text: string): void {
     if (!this.voiceEnabled || !this.speechSupported) return;
     try {
       window.speechSynthesis.cancel();
-      const clean = text.replace(/[*_#•\[\]]/g, '').replace(/https?:\/\/\S+/g, '');
-      const utterance = new SpeechSynthesisUtterance(clean);
-      utterance.lang = 'es-ES';
-      utterance.rate = 1;
-      window.speechSynthesis.speak(utterance);
+      const clean = this.sanitizeForSpeech(text);
+      if (!clean) return;
+
+      const voice = this.pickBestVoice();
+      // Se divide en oraciones y se encolan una a una (en vez de un único
+      // SpeechSynthesisUtterance gigante) para que la voz respete pausas
+      // naturales entre ideas y no suene como un bloque de texto corrido.
+      const sentences = (clean.match(/[^.!?]+[.!?]*/g) || [clean]).map(s => s.trim()).filter(Boolean);
+
+      this.isSpeaking = true;
+      const speakNext = (i: number) => {
+        if (i >= sentences.length) {
+          this.isSpeaking = false;
+          this.cdr.detectChanges();
+          return;
+        }
+        const utterance = new SpeechSynthesisUtterance(sentences[i]);
+        utterance.lang = voice?.lang || 'es-ES';
+        if (voice) utterance.voice = voice;
+        utterance.rate = 0.95;
+        utterance.pitch = 1;
+        utterance.onend = () => speakNext(i + 1);
+        utterance.onerror = () => { this.isSpeaking = false; this.cdr.detectChanges(); };
+        window.speechSynthesis.speak(utterance);
+      };
+      speakNext(0);
     } catch {
+      this.isSpeaking = false;
       // Si falla la síntesis de voz, simplemente no se lee en voz alta.
     }
+  }
+
+  stopSpeaking(): void {
+    window.speechSynthesis?.cancel();
+    this.isSpeaking = false;
+    this.cdr.detectChanges();
   }
 
   ngAfterViewChecked(): void {
@@ -192,11 +379,45 @@ export class Chatbot implements OnInit, AfterViewChecked {
     this.messages.push({ id: ++this.msgId, role: 'bot', text, time: this.now() });
     this.cdr.detectChanges();
     this.speak(text);
+    this.persistHistory();
   }
 
   private addUserMessage(text: string): void {
     this.messages.push({ id: ++this.msgId, role: 'user', text, time: this.now() });
     this.cdr.detectChanges();
+    this.persistHistory();
+  }
+
+  // La conversación se guarda por usuario (Angular destruye este componente
+  // al salir de la página, así que sin esto se perdía todo el historial al
+  // volver al chat). Se limita a los últimos 60 mensajes para no acumular
+  // indefinidamente en localStorage.
+  private historyKey(): string {
+    const username = this.currentUser?.username || 'anon';
+    return `turnify_chat_history_${username}`;
+  }
+
+  private persistHistory(): void {
+    try {
+      const toSave = this.messages.filter(m => !m.typing).slice(-60);
+      localStorage.setItem(this.historyKey(), JSON.stringify({ msgId: this.msgId, messages: toSave }));
+    } catch {
+      // localStorage lleno o no disponible (modo privado, etc.) — no es crítico.
+    }
+  }
+
+  private restoreHistory(): boolean {
+    try {
+      const raw = localStorage.getItem(this.historyKey());
+      if (!raw) return false;
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed?.messages) || !parsed.messages.length) return false;
+      this.messages = parsed.messages;
+      this.msgId = parsed.msgId || this.messages[this.messages.length - 1].id || 0;
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   sendMessage(): void {
@@ -213,6 +434,17 @@ export class Chatbot implements OnInit, AfterViewChecked {
     this.getBotResponse(text);
   }
 
+  // Botón de respuesta rápida (ver herramienta "mostrar_opciones"): se
+  // limpian las opciones de ese mensaje para que no queden clicables una
+  // vez respondidas, y se envía la opción elegida como si el usuario la
+  // hubiera escrito.
+  chooseOption(msg: ChatMessage, option: string): void {
+    if (this.isTyping) return;
+    msg.options = undefined;
+    this.persistHistory();
+    this.sendSuggestion(option);
+  }
+
   private getBotResponse(userText: string): void {
     this.isTyping = true;
     this.cdr.detectChanges();
@@ -223,6 +455,7 @@ export class Chatbot implements OnInit, AfterViewChecked {
       .map(m => ({ role: m.role, text: m.text }));
 
     let botMsg: ChatMessage | null = null;
+    let pendingOptions: string[] | null = null;
     let processedLength = 0;
     let hadStreamError = false;
 
@@ -246,11 +479,14 @@ export class Chatbot implements OnInit, AfterViewChecked {
             if (evt.type === 'chunk') {
               if (!botMsg) {
                 this.isTyping = false;
-                botMsg = { id: ++this.msgId, role: 'bot', text: '', time: this.now() };
+                botMsg = { id: ++this.msgId, role: 'bot', text: '', time: this.now(), options: pendingOptions || undefined };
                 this.messages.push(botMsg);
               }
               botMsg.text += evt.text;
               this.cdr.detectChanges();
+            } else if (evt.type === 'options') {
+              pendingOptions = Array.isArray(evt.options) ? evt.options : null;
+              if (botMsg && pendingOptions) botMsg.options = pendingOptions;
             } else if (evt.type === 'error') {
               hadStreamError = true;
             }
@@ -269,6 +505,7 @@ export class Chatbot implements OnInit, AfterViewChecked {
           } else {
             this.addBotMessage(this.generateLocalResponse(userText));
           }
+          this.persistHistory();
           this.cdr.detectChanges();
         }
       },
@@ -322,8 +559,10 @@ export class Chatbot implements OnInit, AfterViewChecked {
     if (/(adiós|hasta luego|chao|bye|gracias.?nada.?más)/.test(t))
       return 'Hasta luego. Fue un placer ayudarte. Que te atiendan pronto y tengas un excelente día.';
 
-    // Respuesta por defecto cuando no se reconoce la pregunta
-    return `Entendí tu mensaje: "${text}"\n\nPor ahora estoy en fase de configuración con IA. Pronto podré responder preguntas más complejas. Mientras tanto, puedo ayudarte con:\n\n• Agendar un turno\n• Información sobre documentos\n• Tiempos de espera\n• Cancelar un turno\n\n¿Sobre cuál de estos temas quieres saber más?`;
+    // Respuesta por defecto cuando no se reconoce la pregunta (o el asistente
+    // con IA no está disponible en este momento). Mantiene el mismo alcance
+    // que TURNITY: solo temas del sistema de gestión de turnos.
+    return `En este momento puedo ayudarte con estos temas del sistema de gestión de turnos:\n\n• Agendar un turno\n• Documentos requeridos\n• Tiempos de espera y posición en la fila\n• Cancelar un turno\n• Atención preferencial\n• Horarios y sedes\n• Turnos virtuales\n\n¿Sobre cuál de estos te puedo orientar?`;
   }
 
   goBack(): void {

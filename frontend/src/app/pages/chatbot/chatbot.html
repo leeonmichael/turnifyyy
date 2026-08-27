@@ -37,6 +37,14 @@
       </button>
     }
 
+    @if (isSpeaking) {
+      <button class="stop-speak-btn" (click)="stopSpeaking()" title="Detener lectura">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <rect x="5" y="5" width="14" height="14" rx="2"></rect>
+        </svg>
+      </button>
+    }
+
     <button class="clear-btn" (click)="clearChat()" title="Limpiar chat">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="3 6 5 6 21 6"></polyline>
@@ -59,6 +67,13 @@
 
         <div class="bubble" [class.bubble-bot]="msg.role === 'bot'" [class.bubble-user]="msg.role === 'user'">
           <div class="bubble-text">{{ msg.text }}</div>
+          @if (msg.options?.length) {
+            <div class="quick-options">
+              @for (opt of msg.options; track opt) {
+                <button class="quick-option-btn" [disabled]="isTyping" (click)="chooseOption(msg, opt)">{{ opt }}</button>
+              }
+            </div>
+          }
           <div class="bubble-time">{{ msg.time }}</div>
         </div>
 
@@ -103,7 +118,7 @@
       <textarea
         class="chat-input"
         [(ngModel)]="userInput"
-        [placeholder]="isListening ? 'Escuchando...' : 'Escribe tu pregunta aquí...'"
+        [placeholder]="isListening ? 'Grabando... toca el micrófono para enviar' : 'Escribe tu pregunta aquí...'"
         rows="1"
         (keydown.enter)="$event.preventDefault(); sendMessage()"
         [disabled]="isTyping"
@@ -114,7 +129,7 @@
           [class.listening]="isListening"
           (click)="toggleListening()"
           [disabled]="isTyping"
-          [title]="isListening ? 'Detener dictado' : 'Dictar por voz'">
+          [title]="isListening ? 'Detener y enviar' : 'Hablar con el asistente'">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3Z"></path>
             <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
