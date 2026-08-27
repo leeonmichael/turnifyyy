@@ -19,6 +19,7 @@ export class App implements OnInit {
   router = inject(Router);
 
   routesWithoutLayout = ['/login', '/register'];
+  routesWithoutFooter = ['/virtual-turns'];
 
   ngOnInit(): void {
     this.router.events
@@ -26,8 +27,8 @@ export class App implements OnInit {
       .subscribe(() => {
         const url = this.router.url;
         this.showNavbar = !this.routesWithoutLayout.includes(url);
-        this.showFooter = !this.routesWithoutLayout.includes(url);
-        
+        this.showFooter = !this.routesWithoutLayout.includes(url) && !this.routesWithoutFooter.includes(url);
+
         const role = localStorage.getItem('turnify_role');
         this.userRole = role || 'client';
       });

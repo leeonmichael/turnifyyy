@@ -22,9 +22,9 @@ type View = 'request' | 'tracking';
 export class Home implements OnInit, OnDestroy {
   // ---- Form state ----
   serviceType = 'general';
-  selectedSede = 'MOSQUERA';
+  selectedSedeId = '';
   turnMode = 'presencial';
-  sedeOptions: string[] = [];
+  sedeOptions: any[] = [];
   currentUser: any = null;
   documents: string[] = [];
   requestingTurn = false;
@@ -38,6 +38,7 @@ export class Home implements OnInit, OnDestroy {
   // ---- Active turn ----
   userTurn: string | null = null;
   userTurnSede = '';
+  userTurnSedeId = '';
   userTurnStatus = '';        // 'waiting' | 'called' | 'finished' | 'cancelled'
   userTurnServiceType = '';
   positionNum = 0;
@@ -76,7 +77,7 @@ export class Home implements OnInit, OnDestroy {
 
   // ---- Staff (admin/employee panel) ----
   turns: any[] = [];
-  filterSede = '';
+  filterSedeId = '';
 
   // ---- Alarm dedup flags ----
   private warnAlarmPlayed = false;
@@ -101,15 +102,15 @@ export class Home implements OnInit, OnDestroy {
 
   get waitingCount(): number {
     const base = this.turns.filter((t: any) => t.status === 'waiting');
-    return this.filterSede ? base.filter((t: any) => t.sede === this.filterSede).length : base.length;
+    return this.filterSedeId ? base.filter((t: any) => t.sede_id === this.filterSedeId).length : base.length;
   }
   get callingCount(): number {
     const base = this.turns.filter((t: any) => t.status === 'called');
-    return this.filterSede ? base.filter((t: any) => t.sede === this.filterSede).length : base.length;
+    return this.filterSedeId ? base.filter((t: any) => t.sede_id === this.filterSedeId).length : base.length;
   }
   get finishedCount(): number {
     const base = this.turns.filter((t: any) => t.status === 'finished');
-    return this.filterSede ? base.filter((t: any) => t.sede === this.filterSede).length : base.length;
+    return this.filterSedeId ? base.filter((t: any) => t.sede_id === this.filterSedeId).length : base.length;
   }
 
   constructor(
@@ -129,13 +130,13 @@ export class Home implements OnInit, OnDestroy {
 
     this.http.get('/api/sedes/').subscribe({
       next: (data: any) => {
-        this.sedeOptions = (data.sedes || []).map((s: any) => s.name);
-        if (this.sedeOptions.length && !this.sedeOptions.includes(this.selectedSede)) {
-          this.selectedSede = this.sedeOptions[0];
+        this.sedeOptions = data.sedes || [];
+        if (this.sedeOptions.length && !this.sedeOptions.some((s: any) => s.id === this.selectedSedeId)) {
+          this.selectedSedeId = this.sedeOptions[0].id;
         }
         this.cdr.detectChanges();
       },
-      error: () => { this.sedeOptions = ['MOSQUERA', 'MADRID']; }
+      error: () => { this.sedeOptions = []; }
     });
 
     this.documents = JSON.parse(localStorage.getItem('client_documents') || '[]');
@@ -198,6 +199,7 @@ export class Home implements OnInit, OnDestroy {
         if (t) {
           this.userTurn      = t.number;
           this.userTurnSede  = t.sede || '';
+          this.userTurnSedeId = t.sede_id || '';
           this.userTurnStatus = t.status;
           this.userTurnServiceType = t.service_type || '';
           this.meetLink            = t.meet_link || '';
@@ -205,14 +207,14 @@ export class Home implements OnInit, OnDestroy {
           this.chatMessages        = t.chat_messages || [];
           if (t.required_documents && t.required_documents.length) this.requiredDocuments = t.required_documents;
           localStorage.setItem('userTurn', t.number);
-          if (t.sede) localStorage.setItem('turnSede', t.sede);
+          if (t.sede_id) localStorage.setItem('turnSedeId', t.sede_id);
           this.view = 'tracking';
           this.ws.send({ action: 'get_all' });
           setTimeout(() => this.pollPosition(), 800); // calcula posición rápido
         } else {
           // No active turn → clear any stale localStorage
           localStorage.removeItem('userTurn');
-          localStorage.removeItem('turnSede');
+          localStorage.removeItem('turnSedeId');
           this.view = 'request';
         }
         this.cdr.detectChanges();
@@ -220,7 +222,7 @@ export class Home implements OnInit, OnDestroy {
       error: () => {
         // If auth fails or network error, fall back to localStorage
         const stored = localStorage.getItem('userTurn');
-        if (stored) { this.userTurn = stored; this.userTurnSede = localStorage.getItem('turnSede') || ''; this.view = 'tracking'; }
+        if (stored) { this.userTurn = stored; this.userTurnSedeId = localStorage.getItem('turnSedeId') || ''; this.view = 'tracking'; }
         this.cdr.detectChanges();
       }
     });
@@ -243,11 +245,11 @@ export class Home implements OnInit, OnDestroy {
   syncTurnStatus(allTurns: any[]): void {
     if (!this.userTurn) return;
 
-    const sede = this.userTurnSede;
+    const sedeId = this.userTurnSedeId;
 
     // Find turn: try with sede first, fall back to number-only to handle any casing/mismatch
     let mine = allTurns.find((t: any) =>
-      t.number === this.userTurn && (sede ? t.sede === sede : true)
+      t.number === this.userTurn && (sedeId ? t.sede_id === sedeId : true)
     );
     if (!mine) {
       mine = allTurns.find((t: any) => t.number === this.userTurn);
@@ -262,6 +264,7 @@ export class Home implements OnInit, OnDestroy {
     this.userTurnStatus = mine.status;
     // Keep sede in sync with what the server says
     if (mine.sede) this.userTurnSede = mine.sede;
+    if (mine.sede_id) this.userTurnSedeId = mine.sede_id;
     if (mine.service_type) this.userTurnServiceType = mine.service_type;
     this.meetLink          = mine.meet_link || this.meetLink;
     this.uploadedDocuments = mine.uploaded_documents || this.uploadedDocuments;
@@ -286,10 +289,10 @@ export class Home implements OnInit, OnDestroy {
 
     // status === 'waiting' — compute position within the same sede queue
     this.calledAlarmPlayed = false;
-    const effectiveSede = mine.sede || sede;
+    const effectiveSedeId = mine.sede_id || sedeId;
 
     const waiting = allTurns
-      .filter((t: any) => t.status === 'waiting' && (!effectiveSede || t.sede === effectiveSede))
+      .filter((t: any) => t.status === 'waiting' && (!effectiveSedeId || t.sede_id === effectiveSedeId))
       .sort((a: any, b: any) => (a.created_at || '').localeCompare(b.created_at || ''));
 
     let idx = waiting.findIndex((t: any) => t.number === this.userTurn);
@@ -346,6 +349,7 @@ export class Home implements OnInit, OnDestroy {
   private resetTurnState(): void {
     this.userTurn          = null;
     this.userTurnSede      = '';
+    this.userTurnSedeId    = '';
     this.userTurnStatus    = '';
     this.userTurnServiceType = '';
     this.meetLink           = '';
@@ -358,7 +362,7 @@ export class Home implements OnInit, OnDestroy {
     this.turnConfirmed     = false;
     this.view              = 'request';   // ← fix: siempre vuelve al formulario
     localStorage.removeItem('userTurn');
-    localStorage.removeItem('turnSede');
+    localStorage.removeItem('turnSedeId');
     localStorage.removeItem('turnMode');
     localStorage.removeItem('turnServiceType');
   }
@@ -375,14 +379,18 @@ export class Home implements OnInit, OnDestroy {
     this.errorMsg = '';
     this.cdr.detectChanges();
 
-    const sede        = this.turnMode === 'presencial' ? this.selectedSede : 'VIRTUAL';
+    const sedeId       = this.turnMode === 'presencial' ? this.selectedSedeId : 'VIRTUAL';
+    const sedeName      = this.turnMode === 'presencial'
+      ? (this.sedeOptions.find((s: any) => s.id === sedeId)?.name || '')
+      : 'Virtual';
     const serviceType = this.turnMode === 'virtual' ? 'virtual' : this.serviceType;
 
-    this.turn.createTurn(serviceType, sede).subscribe({
+    this.turn.createTurn(serviceType, sedeId).subscribe({
       next: (data: any) => {
         this.requestingTurn    = false;
         this.userTurn          = data.number;
-        this.userTurnSede      = sede;
+        this.userTurnSede      = sedeName;
+        this.userTurnSedeId    = sedeId;
         this.userTurnStatus    = 'waiting';
         this.userTurnServiceType = serviceType;
         this.meetLink           = data.meet_link || '';
@@ -395,7 +403,7 @@ export class Home implements OnInit, OnDestroy {
         this.calledAlarmPlayed = false;
         this.turnConfirmed     = false;
         localStorage.setItem('userTurn', data.number);
-        localStorage.setItem('turnSede', sede);
+        localStorage.setItem('turnSedeId', sedeId);
         localStorage.setItem('turnMode', this.turnMode);
         this.view          = 'tracking';
         this.showTurnModal = true;

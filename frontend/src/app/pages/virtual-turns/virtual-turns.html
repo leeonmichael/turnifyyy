@@ -1,5 +1,13 @@
 <div class="virtual-turns-container fade-in-up">
 
+  <!-- Bienvenida al especialista virtual -->
+  <div class="welcome-banner" *ngIf="!activeVirtualTurn">
+    <div class="welcome-content">
+      <h1 class="welcome-title">Bienvenido de vuelta, {{ getEmployeeName() }}</h1>
+      <p class="welcome-sede">Especialista en Turnos Virtuales</p>
+    </div>
+  </div>
+
   <!-- Panel de atención activa (chat) -->
   <div class="chat-wrapper" *ngIf="activeVirtualTurn">
     <div class="chat-panel">
@@ -8,8 +16,7 @@
           <span class="chat-turn-badge">{{ activeVirtualTurn.number }}</span>
           <div class="chat-header-text">
             <h2>Atención Virtual en Curso</h2>
-            <p>Cliente: <strong>{{ activeVirtualTurn.created_by || 'Desconocido' }}</strong>
-               · Sede: {{ activeVirtualTurn.sede }}</p>
+            <p>Cliente: <strong>{{ activeVirtualTurn.created_by || 'Desconocido' }}</strong></p>
           </div>
         </div>
         <button class="btn-close-chat" (click)="closeChat()" title="Volver a lista">✕</button>
@@ -97,16 +104,6 @@
     <h1>Turnos Virtuales</h1>
     <p class="subtitle">Atiende turnos virtuales en tiempo real · actualización automática</p>
 
-    <div class="filters-section">
-      <div class="form-group">
-        <label class="form-label">Filtrar por Sede:</label>
-        <select [(ngModel)]="filterSede" class="form-control form-select" (change)="applyFilters()">
-          <option value="">Todas las sedes</option>
-          <option *ngFor="let sede of sedes">{{ sede }}</option>
-        </select>
-      </div>
-    </div>
-
     <div *ngIf="loading" class="loading-state">Cargando turnos virtuales...</div>
 
     <div class="turns-list" *ngIf="!loading && filteredTurns.length > 0">
@@ -115,7 +112,6 @@
           <tr>
             <th>Número</th>
             <th>Cliente</th>
-            <th>Sede</th>
             <th>Estado</th>
             <th>Documentos</th>
             <th>Hora</th>
@@ -126,7 +122,6 @@
           <tr *ngFor="let turn of filteredTurns">
             <td class="turn-number">{{ turn.number }}</td>
             <td>{{ turn.created_by || '-' }}</td>
-            <td>{{ turn.sede }}</td>
             <td>
               <span class="status-badge"
                     [class.status-waiting]="turn.status === 'waiting'"

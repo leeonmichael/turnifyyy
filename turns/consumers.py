@@ -65,8 +65,10 @@ class TurnConsumer(AsyncWebsocketConsumer):
     def _get_all_turns_data(self):
         from .firebase_config import db
         from .views import _fmt_time, _fmt_datetime
+        from .fs_helpers import _sedes_map, _resolve_sede_name
         if not db:
             return []
+        sedes_map = _sedes_map()
         data = []
         for doc in db.collection('turns').stream():
             t = doc.to_dict()
@@ -77,11 +79,16 @@ class TurnConsumer(AsyncWebsocketConsumer):
                 'number':       t.get('number', ''),
                 'status':       t.get('status', ''),
                 'service_type': t.get('service_type', ''),
-                'sede':         t.get('sede', ''),
+                'sede_id':      t.get('sede_id', ''),
+                'sede':         _resolve_sede_name(t.get('sede_id', ''), sedes_map),
                 'created_at':   _fmt_time(t.get('created_at', '')),
                 'called_by':    t.get('called_by', ''),
                 'created_by':   t.get('created_by', ''),
-                'scheduled_for':_fmt_datetime(t.get('scheduled_for', ''))
+                'scheduled_for':_fmt_datetime(t.get('scheduled_for', '')),
+                'meet_link':          t.get('meet_link', ''),
+                'required_documents': t.get('required_documents', []),
+                'uploaded_documents': t.get('uploaded_documents', []),
+                'chat_messages':      t.get('chat_messages', []),
             })
         data.sort(key=lambda x: x.get('created_at', ''), reverse=True)
         return data
@@ -89,13 +96,20 @@ class TurnConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def _get_waiting_turns_data(self):
         from .firebase_config import db
+        from .fs_helpers import _sedes_map, _resolve_sede_name
         if not db:
             return []
+        sedes_map = _sedes_map()
         data = []
         for doc in db.collection('turns').stream():
             t = doc.to_dict()
             if t and t.get('status') == 'waiting':
-                data.append({'number': t.get('number'), 'status': 'waiting', 'sede': t.get('sede', '')})
+                data.append({
+                    'number':  t.get('number'),
+                    'status':  'waiting',
+                    'sede_id': t.get('sede_id', ''),
+                    'sede':    _resolve_sede_name(t.get('sede_id', ''), sedes_map),
+                })
         data.sort(key=lambda x: x.get('number', ''))
         return data
 

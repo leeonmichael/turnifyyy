@@ -73,26 +73,50 @@ def _fs_get_user(username: str):
     return doc.to_dict() if doc.exists else None
 
 
-def _get_employee_sede(username: str, role: str) -> str:
+def _get_employee_sede_id(username: str, role: str) -> str:
     if role == 'employee' and username:
         u = _fs_get_user(username)
-        return (u or {}).get('sede', '')
+        return (u or {}).get('sede_id', '')
     return ''
 
 
-def generate_turn_fb(prefix: str, sede: str) -> str:
-    """Generate next turn number for a given prefix and sede."""
+def _sedes_map() -> dict:
+    """{sede_id: name} de todas las sedes (activas e inactivas)."""
+    if not db:
+        return {}
+    return {doc.id: (doc.to_dict() or {}).get('name', '') for doc in db.collection('sedes').stream()}
+
+
+def _resolve_sede_name(sede_id: str, sedes_map: dict | None = None) -> str:
+    """Resuelve el nombre de una sede en vivo a partir de su id, para que un
+    rename se refleje al instante en turnos/empleados sin tener que tocarlos."""
+    if sede_id == 'VIRTUAL':
+        return 'Virtual'
+    if not sede_id:
+        return ''
+    m = sedes_map if sedes_map is not None else _sedes_map()
+    return m.get(sede_id, '')
+
+
+def generate_turn_fb(prefix: str, sede_id: str) -> str:
+    """Generate next turn number for a given prefix and sede_id.
+
+    También cuenta turnos "viejos" que aún no fueron migrados a sede_id (solo
+    tienen el campo de texto 'sede' de antes) y coinciden por nombre/valor,
+    para no reutilizar un número ya usado por esa sede antes de la migración."""
     if not db:
         return f"{prefix}1"
     try:
-        docs = db.collection('turns').where('sede', '==', sede).stream() if sede else db.collection('turns').stream()
+        legacy_value = 'VIRTUAL' if sede_id == 'VIRTUAL' else _sedes_map().get(sede_id, '')
         pl = len(prefix)
-        nums = [
-            int(t[pl:])
-            for doc in docs
-            for t in [doc.to_dict().get('number', '') if doc.to_dict() else '']
-            if t.startswith(prefix) and len(t) > pl and t[pl:].isdigit()
-        ]
+        nums = []
+        for doc in db.collection('turns').stream():
+            d = doc.to_dict() or {}
+            if sede_id and d.get('sede_id') != sede_id and (not legacy_value or d.get('sede') != legacy_value):
+                continue
+            t = d.get('number', '')
+            if t.startswith(prefix) and len(t) > pl and t[pl:].isdigit():
+                nums.append(int(t[pl:]))
         return f"{prefix}{max(nums) + 1}" if nums else f"{prefix}1"
     except Exception:
         return f"{prefix}1"
@@ -103,6 +127,7 @@ def broadcast_turn_update():
     if not db:
         return
     try:
+        sedes_map = _sedes_map()
         turns_data = []
         for doc in db.collection('turns').stream():
             t = doc.to_dict()
@@ -113,7 +138,8 @@ def broadcast_turn_update():
                 'number':       t.get('number', ''),
                 'status':       t.get('status', 'waiting'),
                 'service_type': t.get('service_type', 'general'),
-                'sede':         t.get('sede', ''),
+                'sede_id':      t.get('sede_id', ''),
+                'sede':         _resolve_sede_name(t.get('sede_id', ''), sedes_map),
                 'created_at':   _fmt_time(t.get('created_at', '')),
                 'called_by':    t.get('called_by', ''),
                 'created_by':   t.get('created_by', ''),

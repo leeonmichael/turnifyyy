@@ -19,9 +19,8 @@ import { Subject } from 'rxjs';
 export class VirtualTurns implements OnInit, OnDestroy {
   turns: any[] = [];
   filteredTurns: any[] = [];
-  filterSede = '';
-  sedes: string[] = [];
   loading = false;
+  currentUser: any = null;
 
   activeVirtualTurn: any = null;
   systemMessages: { sender: string; text: string; at: string; isSystem: boolean }[] = [];
@@ -42,6 +41,10 @@ export class VirtualTurns implements OnInit, OnDestroy {
     return [...shared, ...this.systemMessages]
       .sort((a, b) => (a.at || '').localeCompare(b.at || ''))
       .map(m => ({ ...m, time: this.formatMsgTime(m.at) }));
+  }
+
+  getEmployeeName(): string {
+    return this.currentUser?.full_name || this.currentUser?.username || 'Empleado';
   }
 
   private formatMsgTime(iso: string): string {
@@ -68,6 +71,7 @@ export class VirtualTurns implements OnInit, OnDestroy {
       this.router.navigate(['/login']);
       return;
     }
+    this.currentUser = this.auth.getCurrentUser();
 
     this.ws.messages$.pipe(takeUntil(this.destroy$)).subscribe({
       next: (msg) => {
@@ -109,14 +113,6 @@ export class VirtualTurns implements OnInit, OnDestroy {
   }
 
   loadData(): void {
-    this.http.get('/api/sedes/', { headers: this.getHeaders() }).subscribe({
-      next: (data: any) => {
-        this.sedes = (data.sedes || []).map((s: any) => s.name);
-        this.cdr.detectChanges();
-      },
-      error: () => {}
-    });
-
     this.http.get('/api/all/', { headers: this.getHeaders() }).subscribe({
       next: (data: any) => {
         this.turns = (data.turns || []).filter((t: any) => t.service_type === 'virtual');
@@ -132,10 +128,7 @@ export class VirtualTurns implements OnInit, OnDestroy {
   }
 
   applyFilters(): void {
-    this.filteredTurns = this.turns.filter((t: any) => {
-      if (this.filterSede && t.sede !== this.filterSede) return false;
-      return t.status === 'waiting' || t.status === 'called';
-    });
+    this.filteredTurns = this.turns.filter((t: any) => t.status === 'waiting' || t.status === 'called');
   }
 
   // ¿Ya subió todos los documentos obligatorios? (para el badge de la tabla)

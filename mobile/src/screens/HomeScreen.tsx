@@ -38,7 +38,7 @@ export default function HomeScreen() {
 
   // ---- Request form state ----
   const [sedes, setSedes] = useState<Sede[]>([]);
-  const [selectedSede, setSelectedSede] = useState('MOSQUERA');
+  const [selectedSedeId, setSelectedSedeId] = useState('');
   const [turnMode, setTurnMode] = useState<'presencial' | 'virtual'>('presencial');
   const [serviceType, setServiceType] = useState('general');
   const [requesting, setRequesting] = useState(false);
@@ -64,11 +64,11 @@ export default function HomeScreen() {
     try {
       const data = await turnsApi.getSedes();
       setSedes(data.sedes || []);
-      if (data.sedes?.length && !data.sedes.some((s) => s.name === selectedSede)) {
-        setSelectedSede(data.sedes[0].name);
+      if (data.sedes?.length && !data.sedes.some((s) => s.id === selectedSedeId)) {
+        setSelectedSedeId(data.sedes[0].id);
       }
     } catch {
-      setSedes([{ id: 'MOSQUERA', name: 'MOSQUERA', city: '', address: '' }]);
+      setSedes([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -95,15 +95,19 @@ export default function HomeScreen() {
     setError('');
     setRequesting(true);
     try {
-      const sede = turnMode === 'presencial' ? selectedSede : 'VIRTUAL';
+      const sedeId = turnMode === 'presencial' ? selectedSedeId : 'VIRTUAL';
+      const sedeName = turnMode === 'presencial'
+        ? (sedes.find((s) => s.id === sedeId)?.name || '')
+        : 'Virtual';
       const type = turnMode === 'virtual' ? 'virtual' : serviceType;
-      const data = await turnsApi.createTurn(type, sede);
+      const data = await turnsApi.createTurn(type, sedeId);
       setActiveTurn({
         id: '',
         number: data.number,
         status: 'waiting',
         service_type: type,
-        sede,
+        sede: sedeName,
+        sede_id: sedeId,
         created_at: new Date().toISOString(),
       });
       loadActiveTurn();
@@ -224,10 +228,10 @@ export default function HomeScreen() {
                 {sedes.map((s) => (
                   <TouchableOpacity
                     key={s.id}
-                    style={[styles.chip, selectedSede === s.name && styles.chipActive]}
-                    onPress={() => setSelectedSede(s.name)}
+                    style={[styles.chip, selectedSedeId === s.id && styles.chipActive]}
+                    onPress={() => setSelectedSedeId(s.id)}
                   >
-                    <Text style={[styles.chipText, selectedSede === s.name && styles.chipTextActive]}>
+                    <Text style={[styles.chipText, selectedSedeId === s.id && styles.chipTextActive]}>
                       {s.name}
                     </Text>
                   </TouchableOpacity>

@@ -93,11 +93,11 @@ def _client_tool_declarations():
     return [
         types.FunctionDeclaration(
             name="crear_turno",
-            description="Crea un nuevo turno para el usuario autenticado.",
+            description="Crea un nuevo turno para el usuario autenticado. Para turnos presenciales, primero llama a listar_sedes y usa el id de la sede elegida (no el nombre).",
             parameters=types.Schema(type="OBJECT", properties={
                 "service_type": types.Schema(type="STRING", description="general | preferential | emergency | virtual"),
-                "sede": types.Schema(type="STRING", description="Nombre de la sede elegida"),
-            }, required=["service_type", "sede"]),
+                "sede_id": types.Schema(type="STRING", description="Id de la sede elegida (obtenido de listar_sedes). No requerido para turnos virtuales."),
+            }, required=["service_type"]),
         ),
         types.FunctionDeclaration(
             name="cancelar_turno",
@@ -175,7 +175,7 @@ def _execute_tool(name: str, args: dict, username: str, role: str) -> dict:
     la vista, nunca de argumentos del modelo, así la IA jamás puede actuar
     como otro usuario ni ejecutar herramientas fuera de su rol."""
     if name == "crear_turno":
-        data, _ = create_turn_service(username, args.get("service_type", "general"), args.get("sede", "MOSQUERA"))
+        data, _ = create_turn_service(username, args.get("service_type", "general"), args.get("sede_id", ""))
         return data
     if name == "cancelar_turno":
         data, _ = cancel_own_turn_service(username, args.get("turn_number", ""))

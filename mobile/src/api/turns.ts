@@ -13,6 +13,7 @@ export interface ActiveTurn {
   status: 'waiting' | 'called' | 'finished' | 'cancelled';
   service_type: string;
   sede: string;
+  sede_id: string;
   created_at: string;
 }
 
@@ -20,8 +21,8 @@ export function getSedes(): Promise<{ sedes: Sede[] }> {
   return api.get('/sedes/');
 }
 
-export function createTurn(service_type: string, sede: string) {
-  return api.post('/create/', { service_type, sede });
+export function createTurn(service_type: string, sede_id: string) {
+  return api.post('/create/', { service_type, sede_id });
 }
 
 export function getMyActiveTurn(): Promise<{ turn: ActiveTurn | null }> {

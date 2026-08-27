@@ -6,6 +6,34 @@
   flex: 1;
 }
 
+/* Bienvenida (mismo estilo que el panel de empleado) */
+.welcome-banner {
+  background: linear-gradient(135deg, #4a90f7 0%, #2563eb 100%);
+  border-radius: 16px;
+  padding: 2rem;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 4px 20px rgba(74, 144, 247, 0.25);
+}
+
+.welcome-content {
+  text-align: center;
+}
+
+.welcome-title {
+  color: white;
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.welcome-sede {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 1.1rem;
+  margin: 0.5rem 0 0;
+  font-weight: 500;
+}
+
 /* ─── Lista de turnos ─── */
 .virtual-card {
   background: white;

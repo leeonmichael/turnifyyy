@@ -31,8 +31,8 @@ export class TurnService {
     return this.http.get(`${this.apiUrl}/all/`, { headers: this.getHeaders() });
   }
 
-  createTurn(service_type: string = 'general', sede: string = 'MOSQUERA'): Observable<any> {
-    return this.http.post(`${this.apiUrl}/create/`, { service_type, sede }, { headers: this.getHeaders() });
+  createTurn(service_type: string = 'general', sede_id: string = ''): Observable<any> {
+    return this.http.post(`${this.apiUrl}/create/`, { service_type, sede_id }, { headers: this.getHeaders() });
   }
 
   callNext(): Observable<any> {

@@ -9,7 +9,7 @@ las vistas de turns/views.py como por el asistente de IA
 from django.utils import timezone
 from .firebase_config import db
 from .fs_helpers import (
-    _fs_all_turns, _fs_get_user, _get_employee_sede,
+    _fs_all_turns, _fs_get_user, _get_employee_sede_id, _sedes_map, _resolve_sede_name,
     generate_turn_fb, get_turn_prefix, broadcast_turn_update,
     generate_meet_link, _fmt_time, _fmt_datetime,
 )
@@ -24,9 +24,16 @@ VIRTUAL_REQUIRED_DOCUMENTS = [
 ]
 
 
-def create_turn_service(user_name: str, service_type: str = 'general', sede: str = 'MOSQUERA') -> tuple[dict, int]:
+def create_turn_service(user_name: str, service_type: str = 'general', sede_id: str = '') -> tuple[dict, int]:
     if not db:
         return {'error': 'Servicio no disponible'}, 503
+
+    if service_type == 'virtual':
+        sede_id = 'VIRTUAL'
+    elif not sede_id:
+        sedes, _ = get_sedes_service()
+        first = next(iter(sedes.get('sedes', [])), None)
+        sede_id = first['id'] if first else ''
 
     if user_name:
         all_turns = _fs_all_turns()
@@ -38,11 +45,11 @@ def create_turn_service(user_name: str, service_type: str = 'general', sede: str
             return {
                 'error':           'Ya tienes un turno activo',
                 'existing_number': existing.get('number', ''),
-                'existing_sede':   existing.get('sede', '')
+                'existing_sede':   _resolve_sede_name(existing.get('sede_id', ''))
             }, 400
 
     prefix = get_turn_prefix(service_type)
-    number = generate_turn_fb(prefix, sede)
+    number = generate_turn_fb(prefix, sede_id)
 
     client_data = {}
     if user_name:
@@ -66,7 +73,7 @@ def create_turn_service(user_name: str, service_type: str = 'general', sede: str
         'number':        number,
         'status':        'waiting',
         'service_type':  service_type,
-        'sede':          sede,
+        'sede_id':       sede_id,
         'client_data':   client_data,
         'created_by':    user_name,
         'called_by':     '',
@@ -133,7 +140,8 @@ def get_my_active_turn_service(username: str) -> tuple[dict, int]:
         'number':       t.get('number', ''),
         'status':       t.get('status', ''),
         'service_type': t.get('service_type', ''),
-        'sede':         t.get('sede', ''),
+        'sede_id':      t.get('sede_id', ''),
+        'sede':         _resolve_sede_name(t.get('sede_id', '')),
         'created_at':   _fmt_datetime(t.get('created_at', '')),
         'meet_link':          t.get('meet_link', ''),
         'required_documents': t.get('required_documents', []),
@@ -152,13 +160,15 @@ def get_my_turns_service(username: str) -> tuple[dict, int]:
         key=lambda t: t.get('created_at', ''),
         reverse=True
     )
+    sedes_map = _sedes_map()
 
     return {'turns': [{
         'id':           t.get('_doc_id', ''),
         'number':       t.get('number', ''),
         'status':       t.get('status', ''),
         'service_type': t.get('service_type', ''),
-        'sede':         t.get('sede', '') or 'N/A',
+        'sede_id':      t.get('sede_id', ''),
+        'sede':         _resolve_sede_name(t.get('sede_id', ''), sedes_map) or 'N/A',
         'created_at':   _fmt_datetime(t.get('created_at', '')),
         'finished_at':  _fmt_datetime(t.get('finished_at', '')) or None,
         'scheduled_for':_fmt_datetime(t.get('scheduled_for', '')) or None,
@@ -197,12 +207,14 @@ def call_next_service(called_by: str, calling_role: str, service_type: str = '')
     if not db:
         return {'message': 'Servicio no disponible'}, 503
 
-    employee_sede = _get_employee_sede(called_by, calling_role)
+    employee_sede_id = _get_employee_sede_id(called_by, calling_role)
 
     all_turns = _fs_all_turns()
     waiting = [t for t in all_turns if t.get('status') == 'waiting']
-    if employee_sede:
-        waiting = [t for t in waiting if t.get('sede') == employee_sede or t.get('service_type') == 'virtual']
+    if employee_sede_id:
+        # Cada empleado (incluido el especialista virtual, sede_id='VIRTUAL')
+        # solo atiende turnos de su propia sede/cola.
+        waiting = [t for t in waiting if t.get('sede_id') == employee_sede_id]
     if service_type:
         waiting = [t for t in waiting if t.get('service_type') == service_type]
     waiting.sort(key=lambda t: t.get('created_at', ''))
@@ -224,11 +236,11 @@ def cancel_current_service(username: str, role: str) -> tuple[dict, int]:
     if not db:
         return {'success': False, 'message': 'Servicio no disponible'}, 503
 
-    sede = _get_employee_sede(username, role)
+    sede_id = _get_employee_sede_id(username, role)
     all_turns = _fs_all_turns()
     called = [t for t in all_turns if t.get('status') == 'called']
-    if sede:
-        called = [t for t in called if t.get('sede') == sede or t.get('service_type') == 'virtual']
+    if sede_id:
+        called = [t for t in called if t.get('sede_id') == sede_id]
     called.sort(key=lambda t: t.get('created_at', ''), reverse=True)
     if not called:
         return {'success': False, 'message': 'No hay turno en progreso'}, 404
@@ -247,11 +259,11 @@ def finish_current_service(done_by: str, role: str) -> tuple[dict, int]:
     if not db:
         return {'message': 'Servicio no disponible'}, 503
 
-    sede = _get_employee_sede(done_by, role)
+    sede_id = _get_employee_sede_id(done_by, role)
     all_turns = _fs_all_turns()
     called = [t for t in all_turns if t.get('status') == 'called']
-    if sede:
-        called = [t for t in called if t.get('sede') == sede or t.get('service_type') == 'virtual']
+    if sede_id:
+        called = [t for t in called if t.get('sede_id') == sede_id]
     called.sort(key=lambda t: t.get('created_at', ''), reverse=True)
     if not called:
         return {'message': 'No turn in progress'}, 200
@@ -267,20 +279,23 @@ def finish_current_service(done_by: str, role: str) -> tuple[dict, int]:
 
 
 def get_all_turns_service(username: str, role: str) -> tuple[dict, int]:
-    sede = _get_employee_sede(username, role)
+    sede_id = _get_employee_sede_id(username, role)
     all_turns = _fs_all_turns()
-    if sede:
-        # Los turnos virtuales no pertenecen a ninguna sede física (sede='VIRTUAL'),
-        # así que se muestran a todo el personal sin importar su sede asignada.
-        all_turns = [t for t in all_turns if t.get('sede') == sede or t.get('service_type') == 'virtual']
+    if sede_id:
+        # Cada empleado ve solo los turnos de su propia sede. Los turnos
+        # virtuales (sede_id='VIRTUAL') solo los ve el empleado especialista
+        # asignado a esa "sede" virtual, no el resto del personal.
+        all_turns = [t for t in all_turns if t.get('sede_id') == sede_id]
     all_turns.sort(key=lambda t: t.get('created_at', ''), reverse=True)
+    sedes_map = _sedes_map()
 
     return {'turns': [{
         'id':           t.get('_doc_id', ''),
         'number':       t.get('number', ''),
         'status':       t.get('status', ''),
         'service_type': t.get('service_type', ''),
-        'sede':         t.get('sede', ''),
+        'sede_id':      t.get('sede_id', ''),
+        'sede':         _resolve_sede_name(t.get('sede_id', ''), sedes_map),
         'created_at':   _fmt_time(t.get('created_at', '')),
         'called_by':    t.get('called_by', ''),
         'created_by':   t.get('created_by', ''),

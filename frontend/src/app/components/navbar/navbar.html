@@ -23,11 +23,15 @@
       <button (click)="logout()" class="navbar-logout-btn">Salir</button>
     </div>
 
-    <div class="navbar-menu" *ngIf="isEmployee()">
+    <div class="navbar-menu" *ngIf="isEmployee() && !isVirtualEmployee()">
       <a routerLink="/employee" class="navbar-link">Panel</a>
-      <a routerLink="/virtual-turns" class="navbar-link">Turnos Virtuales</a>
       <a routerLink="/manage-users" class="navbar-link">Usuarios</a>
       <a routerLink="/reschedule-turns" class="navbar-link">Reagendar</a>
+      <button (click)="logout()" class="navbar-logout-btn">Salir</button>
+    </div>
+
+    <div class="navbar-menu" *ngIf="isEmployee() && isVirtualEmployee()">
+      <a routerLink="/virtual-turns" class="navbar-link">Turnos Virtuales</a>
       <button (click)="logout()" class="navbar-logout-btn">Salir</button>
     </div>
 
