@@ -49,7 +49,8 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
   try {
     const tokenResponse = await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined);
     return tokenResponse.data;
-  } catch {
+  } catch (e) {
+    console.error('[push] getExpoPushTokenAsync failed:', e);
     return null;
   }
 }

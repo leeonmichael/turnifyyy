@@ -37,6 +37,20 @@ class ApiError extends Error {
   }
 }
 
+type UnauthorizedHandler = () => void | Promise<void>;
+let unauthorizedHandler: UnauthorizedHandler | null = null;
+
+// La pantalla raíz (AuthContext) se suscribe para saber cuándo debe
+// devolver al usuario al login: la sesión guardada ya no sirve.
+export function setUnauthorizedHandler(handler: UnauthorizedHandler): void {
+  unauthorizedHandler = handler;
+}
+
+export async function handleUnauthorized(): Promise<void> {
+  await clearSession();
+  if (unauthorizedHandler) await unauthorizedHandler();
+}
+
 async function request(path: string, options: RequestInit = {}) {
   const token = await getToken();
   const headers: Record<string, string> = {
@@ -59,6 +73,9 @@ async function request(path: string, options: RequestInit = {}) {
   const data = contentType.includes('application/json') ? await res.json().catch(() => ({})) : {};
 
   if (!res.ok) {
+    // Solo forzamos logout si la petición SÍ llevaba token (evita disparar
+    // esto con el 401 de credenciales inválidas en /login/, que no envía token).
+    if (token && res.status === 401) await handleUnauthorized();
     const message = data?.message || data?.error || `Error ${res.status}`;
     throw new ApiError(message, res.status, data?.field);
   }

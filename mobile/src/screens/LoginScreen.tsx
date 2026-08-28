@@ -17,15 +17,18 @@ import { useAuth } from '../context/AuthContext';
 import { colors, shadow } from '../theme';
 
 export default function LoginScreen({ navigation }: any) {
-  const { login } = useAuth();
+  const { login, sessionExpired, clearSessionExpired } = useAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const displayError = error || (sessionExpired ? 'Tu sesión expiró o no es válida. Inicia sesión de nuevo.' : '');
+
   const onSubmit = async () => {
     setError('');
+    clearSessionExpired();
     if (!username.trim()) return setError('Ingresa usuario o correo electrónico');
     if (!password) return setError('Ingresa tu contraseña');
 
@@ -60,10 +63,10 @@ export default function LoginScreen({ navigation }: any) {
             <Text style={styles.title}>Iniciar Sesión</Text>
             <Text style={styles.subtitle}>Bienvenido a Turnify Pro</Text>
 
-            {!!error && (
+            {!!displayError && (
               <View style={styles.errorBox}>
                 <Ionicons name="alert-circle" size={16} color={colors.danger} />
-                <Text style={styles.errorText}>{error}</Text>
+                <Text style={styles.errorText}>{displayError}</Text>
               </View>
             )}
 

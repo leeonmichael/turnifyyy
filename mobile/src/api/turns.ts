@@ -1,6 +1,6 @@
 import { api } from './client';
 import { API_BASE_URL } from './config';
-import { getToken } from './client';
+import { getToken, handleUnauthorized } from './client';
 
 export interface Sede {
   id: string;
@@ -109,7 +109,10 @@ export async function uploadVirtualDocument(
     body: form,
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.message || 'Error al subir el documento');
+  if (!res.ok) {
+    if (token && res.status === 401) await handleUnauthorized();
+    throw new Error(data?.message || 'Error al subir el documento');
+  }
   return data;
 }
 

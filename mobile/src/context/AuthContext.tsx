@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import * as authApi from '../api/auth';
 import { RegisterPayload } from '../api/auth';
-import { saveSession, saveUser, clearSession, getToken, getStoredUser } from '../api/client';
+import { saveSession, saveUser, clearSession, getToken, getStoredUser, setUnauthorizedHandler } from '../api/client';
 import { registerForPushNotificationsAsync } from '../notifications';
 import { registerPushToken } from '../api/push';
 
@@ -19,6 +19,8 @@ interface User {
 interface AuthContextValue {
   user: User | null;
   initializing: boolean;
+  sessionExpired: boolean;
+  clearSessionExpired: () => void;
   login: (username: string, password: string) => Promise<void>;
   register: (data: RegisterPayload) => Promise<void>;
   logout: () => Promise<void>;
@@ -30,6 +32,18 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [initializing, setInitializing] = useState(true);
+  const [sessionExpired, setSessionExpired] = useState(false);
+
+  // El cliente HTTP llama esto cuando cualquier request devuelve 401 con
+  // sesión guardada (token inválido/expirado): saca al usuario al login.
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      setUser(null);
+      setSessionExpired(true);
+    });
+  }, []);
+
+  const clearSessionExpired = useCallback(() => setSessionExpired(false), []);
 
   useEffect(() => {
     (async () => {
@@ -72,6 +86,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     await saveSession(data.token, data.user);
     setUser(data.user);
+    setSessionExpired(false);
   }, []);
 
   const register = useCallback(async (payload: RegisterPayload) => {
@@ -95,7 +110,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, initializing, login, register, logout, refreshUser }}>
+    <AuthContext.Provider
+      value={{ user, initializing, sessionExpired, clearSessionExpired, login, register, logout, refreshUser }}
+    >
       {children}
     </AuthContext.Provider>
   );

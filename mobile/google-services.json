@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "262556008421",
+    "project_id": "turnify-pro",
+    "storage_bucket": "turnify-pro.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:262556008421:android:f08622547f44420babf90c",
+        "android_client_info": {
+          "package_name": "com.turnifypro.mobile"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "262556008421-40kg5i4afdpjh4drcbha2c5o978o0sfl.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB-AnTSARxqaTcKdSmagTOF3p-fwDGup0E"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "262556008421-40kg5i4afdpjh4drcbha2c5o978o0sfl.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
