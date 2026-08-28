@@ -78,7 +78,7 @@ export default function HomeScreen({ navigation }: any) {
       setLoading(true);
       Promise.all([loadActiveTurn(), loadSedes()]).finally(() => setLoading(false));
 
-      pollRef.current = setInterval(loadActiveTurn, 4000);
+      pollRef.current = setInterval(loadActiveTurn, 15000);
       return () => {
         if (pollRef.current) clearInterval(pollRef.current);
       };
