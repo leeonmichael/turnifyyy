@@ -58,6 +58,10 @@ export class Navbar implements OnInit, OnDestroy {
     return this.role === 'employee';
   }
 
+  isVirtualEmployee(): boolean {
+    return this.currentUser?.sede_id === 'VIRTUAL';
+  }
+
   isAdmin(): boolean {
     return this.role === 'admin';
   }

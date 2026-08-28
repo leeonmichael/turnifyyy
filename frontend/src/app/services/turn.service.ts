@@ -31,8 +31,8 @@ export class TurnService {
     return this.http.get(`${this.apiUrl}/all/`, { headers: this.getHeaders() });
   }
 
-  createTurn(service_type: string = 'general', sede: string = 'MOSQUERA'): Observable<any> {
-    return this.http.post(`${this.apiUrl}/create/`, { service_type, sede }, { headers: this.getHeaders() });
+  createTurn(service_type: string = 'general', sede_id: string = ''): Observable<any> {
+    return this.http.post(`${this.apiUrl}/create/`, { service_type, sede_id }, { headers: this.getHeaders() });
   }
 
   callNext(): Observable<any> {
@@ -47,12 +47,12 @@ export class TurnService {
     return this.http.post(`${this.apiUrl}/finish/`, {}, { headers: this.getHeaders() });
   }
 
-  rescheduleCurrent(): Observable<any> {
-    return this.http.post(`${this.apiUrl}/reschedule/`, {}, { headers: this.getHeaders() });
+  rescheduleCurrent(scheduled_date: string): Observable<any> {
+    return this.http.post(`${this.apiUrl}/reschedule/`, { scheduled_date }, { headers: this.getHeaders() });
   }
 
-  rescheduleSpecificTurn(turn_number: string): Observable<any> {
-    return this.http.put(`${this.apiUrl}/reschedule-turn/${turn_number}/`, {}, { headers: this.getHeaders() });
+  rescheduleSpecificTurn(turn_number: string, scheduled_date: string): Observable<any> {
+    return this.http.put(`${this.apiUrl}/reschedule-turn/${turn_number}/`, { scheduled_date }, { headers: this.getHeaders() });
   }
 
   cancelCurrent(): Observable<any> {
@@ -61,6 +61,29 @@ export class TurnService {
 
   getPosition(turn_number: string): Observable<any> {
     return this.http.get(`${this.apiUrl}/position/?turn_number=${turn_number}`, { headers: this.getHeaders() });
+  }
+
+  getVirtualDocumentRequirements(): Observable<any> {
+    return this.http.get(`${this.apiUrl}/virtual/document-requirements/`);
+  }
+
+  uploadVirtualDocument(turn_number: string, document_key: string, file: File): Observable<any> {
+    const formData = new FormData();
+    formData.append('turn_number', turn_number);
+    formData.append('document_key', document_key);
+    formData.append('file', file);
+    const token = localStorage.getItem('turnify_token');
+    let headers = new HttpHeaders();
+    if (token) headers = headers.set('Authorization', `Bearer ${token}`);
+    return this.http.post(`${this.apiUrl}/virtual/upload-document/`, formData, { headers });
+  }
+
+  reviewVirtualDocument(turn_number: string, document_key: string, status: string, note: string = ''): Observable<any> {
+    return this.http.post(`${this.apiUrl}/virtual/review-document/`, { turn_number, document_key, status, note }, { headers: this.getHeaders() });
+  }
+
+  sendVirtualChatMessage(turn_number: string, text: string): Observable<any> {
+    return this.http.post(`${this.apiUrl}/virtual/send-message/`, { turn_number, text }, { headers: this.getHeaders() });
   }
 
   getStatistics(): Observable<any> {

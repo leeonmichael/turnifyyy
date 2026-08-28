@@ -20,15 +20,17 @@ from django.contrib.auth.hashers import make_password, check_password
 from collections import Counter
 from .fs_helpers import (
     get_turn_prefix, _fmt_time, _fmt_datetime, _fs_all_turns, _fs_all_users,
-    _fs_get_user, _get_employee_sede, generate_turn_fb, broadcast_turn_update,
+    _fs_get_user, _get_employee_sede_id, generate_turn_fb, broadcast_turn_update,
+    _sedes_map, _resolve_sede_name, validate_schedule_date,
 )
 from .turn_services import (
     create_turn_service, cancel_own_turn_service, get_my_active_turn_service,
     get_my_turns_service, get_position_service, get_sedes_service,
     call_next_service, cancel_current_service, finish_current_service,
-    get_all_turns_service, get_statistics_service,
+    get_all_turns_service, get_statistics_service, VIRTUAL_REQUIRED_DOCUMENTS,
 )
-from .ai_assistant import get_chatbot_reply_stream, get_proactive_message, AIUnavailableError
+from .storage_helpers import upload_virtual_document_file
+from .ai_assistant import get_chatbot_reply_stream, get_proactive_message, transcribe_audio, AIUnavailableError
 
 
 # ─── Page views ──────────────────────────────────────────────────────────────
@@ -133,7 +135,7 @@ def register_user(request):
         'phone':         phone,
         'cargo':         '',
         'entidad':       '',
-        'sede':          '',
+        'sede_id':       '',
         'role':          'client',
         'is_active':     True,
         'created_at':    now_iso,
@@ -201,6 +203,7 @@ def login_user(request):
         pass
 
     redirect_map = {'client': '/home/', 'admin': '/dashboard/'}
+    sede_id = user_doc.get('sede_id', '')
     return Response({
         'success':      True,
         'token':        token,
@@ -211,7 +214,8 @@ def login_user(request):
             'cedula':    user_doc.get('cedula', ''),
             'email':     user_doc.get('email', ''),
             'full_name': user_doc.get('full_name', ''),
-            'sede':      user_doc.get('sede', ''),
+            'sede_id':   sede_id,
+            'sede':      _resolve_sede_name(sede_id),
             'phone':     user_doc.get('phone', ''),
             'cargo':     user_doc.get('cargo', '')
         }
@@ -322,6 +326,7 @@ def get_users(request):
     if c_role == 'employee':
         all_users = [u for u in all_users if u.get('role') == 'client']
     all_users.sort(key=lambda u: u.get('created_at', ''), reverse=True)
+    sedes_map = _sedes_map()
 
     data = [{
         'username':      u.get('username', ''),
@@ -333,7 +338,8 @@ def get_users(request):
         'document_type': u.get('document_type', ''),
         'cargo':         u.get('cargo', ''),
         'entidad':       u.get('entidad', ''),
-        'sede':          u.get('sede', ''),
+        'sede_id':       u.get('sede_id', ''),
+        'sede':          _resolve_sede_name(u.get('sede_id', ''), sedes_map),
         'is_active':     u.get('is_active', True),
         'created_at':    u.get('created_at', '')
     } for u in all_users]
@@ -371,7 +377,7 @@ def create_employee(request):
     cedula        = request.data.get('cedula', '').strip()
     email         = request.data.get('email', '').strip()
     phone         = request.data.get('phone', '').strip()
-    sede          = request.data.get('sede', '').strip()
+    sede_id       = request.data.get('sede_id', '').strip()
 
     if not username:
         return Response({'success': False, 'field': 'username', 'message': 'El nombre de usuario es requerido'}, status=400)
@@ -419,7 +425,7 @@ def create_employee(request):
         'phone':         phone,
         'cargo':         'Empleado',
         'entidad':       'EPS',
-        'sede':          sede,
+        'sede_id':       sede_id,
         'role':          'employee',
         'is_active':     True,
         'created_at':    now_iso,
@@ -439,7 +445,8 @@ def create_employee(request):
             'phone':         phone,
             'cargo':         'Empleado',
             'entidad':       'EPS',
-            'sede':          sede,
+            'sede_id':       sede_id,
+            'sede':          _resolve_sede_name(sede_id),
             'is_active':     True
         }
     })
@@ -459,7 +466,7 @@ def update_employee(request, username):
     cedula        = request.data.get('cedula',        emp.get('cedula', '')).strip()
     email         = request.data.get('email',         emp.get('email', '')).strip()
     phone         = request.data.get('phone',         emp.get('phone', '')).strip()
-    sede          = request.data.get('sede',          emp.get('sede', '')).strip()
+    sede_id       = request.data.get('sede_id',       emp.get('sede_id', '')).strip()
 
     all_users = _fs_all_users()
 
@@ -485,7 +492,7 @@ def update_employee(request, username):
         'phone':         phone,
         'cargo':         'Empleado',
         'entidad':       'EPS',
-        'sede':          sede,
+        'sede_id':       sede_id,
         'updated_at':    timezone.now().isoformat(),
     }
 
@@ -509,7 +516,8 @@ def update_employee(request, username):
             'phone':         phone,
             'cargo':         'Empleado',
             'entidad':       'EPS',
-            'sede':          sede,
+            'sede_id':       sede_id,
+            'sede':          _resolve_sede_name(sede_id),
             'is_active':     emp.get('is_active', True)
         }
     })
@@ -555,6 +563,7 @@ def toggle_user_active(request, username):
 def get_employees(request):
     all_users = _fs_all_users()
     emps = sorted([u for u in all_users if u.get('role') == 'employee'], key=lambda u: u.get('created_at', ''))
+    sedes_map = _sedes_map()
     data = [{
         'username':      e.get('username', ''),
         'full_name':     e.get('full_name', ''),
@@ -564,7 +573,8 @@ def get_employees(request):
         'document_type': e.get('document_type', ''),
         'cargo':         e.get('cargo', ''),
         'entidad':       e.get('entidad', ''),
-        'sede':          e.get('sede', ''),
+        'sede_id':       e.get('sede_id', ''),
+        'sede':          _resolve_sede_name(e.get('sede_id', ''), sedes_map),
         'is_active':     e.get('is_active', True),
     } for e in emps]
     return Response({'employees': data})
@@ -651,12 +661,12 @@ def get_my_active_turn(request):
 @api_view(['POST'])
 def create_turn(request):
     service_type = request.data.get('service_type', 'general')
-    sede         = request.data.get('sede', 'MOSQUERA')
+    sede_id      = request.data.get('sede_id', '')
     token        = get_token_from_request(request)
     payload      = decode_access_token(token) if token else None
     user_name    = (payload.get('username') or '') if payload else ''
 
-    data, status_code = create_turn_service(user_name, service_type, sede)
+    data, status_code = create_turn_service(user_name, service_type, sede_id)
     return Response(data, status=status_code)
 
 
@@ -753,15 +763,15 @@ def call_specific_turn(request):
     payload       = decode_access_token(token) if token else None
     called_by     = (payload.get('username') or '') if payload else ''
     calling_role  = (payload.get('role')     or '') if payload else ''
-    employee_sede = _get_employee_sede(called_by, calling_role)
+    employee_sede_id = _get_employee_sede_id(called_by, calling_role)
 
     if not db:
         return Response({'success': False, 'message': 'Servicio no disponible'}, status=503)
 
     all_turns = _fs_all_turns()
     candidates = [t for t in all_turns if t.get('number') == turn_number and t.get('status') == 'waiting']
-    if employee_sede:
-        candidates = [t for t in candidates if t.get('sede') == employee_sede]
+    if employee_sede_id:
+        candidates = [t for t in candidates if t.get('sede_id') == employee_sede_id]
     if not candidates:
         return Response({'success': False, 'message': 'Turn not found'}, status=404)
 
@@ -777,32 +787,39 @@ def call_specific_turn(request):
 
 @csrf_exempt
 @api_view(['POST'])
+@jwt_required
+@role_required('admin', 'employee')
 def reschedule_current(request):
     token    = get_token_from_request(request)
     payload  = decode_access_token(token) if token else None
     username = (payload.get('username') or '') if payload else ''
     role     = (payload.get('role')     or '') if payload else ''
-    sede     = _get_employee_sede(username, role)
+    sede_id  = _get_employee_sede_id(username, role)
 
     if not db:
         return Response({'success': False, 'message': 'Servicio no disponible'}, status=503)
 
+    iso_date, error = validate_schedule_date(request.data.get('scheduled_date', ''))
+    if error:
+        return Response({'success': False, 'message': error}, status=400)
+
     all_turns = _fs_all_turns()
     called = [t for t in all_turns if t.get('status') == 'called']
-    if sede:
-        called = [t for t in called if t.get('sede') == sede]
+    if sede_id:
+        called = [t for t in called if t.get('sede_id') == sede_id]
     called.sort(key=lambda t: t.get('created_at', ''), reverse=True)
     if not called:
         return Response({'success': False, 'message': 'No hay turno en progreso'}, status=404)
 
     turn = called[0]
     db.collection('turns').document(turn['_doc_id']).update({
-        'status':         'waiting',
+        'status':         'rescheduled',
         'called_by':      '',
+        'scheduled_for':  iso_date,
         'rescheduled_at': timezone.now().isoformat()
     })
     broadcast_turn_update()
-    return Response({'success': True, 'number': turn.get('number')})
+    return Response({'success': True, 'number': turn.get('number'), 'scheduled_for': iso_date})
 
 
 @csrf_exempt
@@ -832,15 +849,18 @@ def reschedule_turn(request, turn_number):
     if not matches:
         return Response({'success': False, 'message': 'Turno no encontrado'}, status=404)
 
-    scheduled_date_str = request.data.get('scheduled_date', '')
+    iso_date, error = validate_schedule_date(request.data.get('scheduled_date', ''))
+    if error:
+        return Response({'success': False, 'message': error}, status=400)
+
     db.collection('turns').document(matches[0]['_doc_id']).update({
-        'status':          'waiting',
+        'status':          'rescheduled',
         'called_by':       '',
-        'scheduled_for':   scheduled_date_str,
+        'scheduled_for':   iso_date,
         'rescheduled_at':  timezone.now().isoformat()
     })
     broadcast_turn_update()
-    return Response({'success': True, 'message': 'Turno reagendado', 'scheduled_for': scheduled_date_str})
+    return Response({'success': True, 'message': 'Turno reagendado', 'scheduled_for': iso_date})
 
 
 @csrf_exempt
@@ -1002,6 +1022,144 @@ def upload_document(request):
     return Response({'success': True})
 
 
+# ─── Documentos y videollamada de turnos virtuales ────────────────────────────
+
+@csrf_exempt
+@api_view(['GET'])
+def get_document_requirements(request):
+    return Response({'documents': VIRTUAL_REQUIRED_DOCUMENTS})
+
+
+@csrf_exempt
+@api_view(['POST'])
+@jwt_required
+def upload_virtual_document(request):
+    turn_number  = request.data.get('turn_number', '')
+    document_key = request.data.get('document_key', '')
+    file_obj     = request.FILES.get('file')
+    username     = request.jwt_payload.get('username', '')
+
+    if not db:
+        return Response({'success': False, 'message': 'Servicio no disponible'}, status=503)
+    if not turn_number or not document_key or not file_obj:
+        return Response({'success': False, 'message': 'Faltan datos del documento'}, status=400)
+
+    all_turns = _fs_all_turns()
+    matches = [t for t in all_turns if t.get('number') == turn_number]
+    if not matches:
+        return Response({'success': False, 'message': 'Turno no encontrado'}, status=404)
+    turn = matches[0]
+    if turn.get('created_by') != username:
+        return Response({'success': False, 'message': 'No tienes permiso sobre este turno'}, status=403)
+    if turn.get('service_type') != 'virtual':
+        return Response({'success': False, 'message': 'Este turno no admite documentos'}, status=400)
+
+    doc_label = next(
+        (d['label'] for d in turn.get('required_documents', []) if d.get('key') == document_key),
+        document_key
+    )
+    url, error = upload_virtual_document_file(turn_number, document_key, file_obj)
+    if error:
+        return Response({'success': False, 'message': error}, status=400)
+
+    uploaded = [d for d in turn.get('uploaded_documents', []) if d.get('key') != document_key]
+    uploaded.append({
+        'key':         document_key,
+        'label':       doc_label,
+        'url':         url,
+        'file_name':   file_obj.name,
+        'uploaded_at': timezone.now().isoformat(),
+        'status':      'pending',
+        'review_note': '',
+    })
+    db.collection('turns').document(turn['_doc_id']).update({'uploaded_documents': uploaded})
+    broadcast_turn_update()
+    return Response({'success': True, 'uploaded_documents': uploaded})
+
+
+@csrf_exempt
+@api_view(['POST'])
+@jwt_required
+@role_required('admin', 'employee')
+def review_virtual_document(request):
+    turn_number   = request.data.get('turn_number', '')
+    document_key  = request.data.get('document_key', '')
+    review_status = request.data.get('status', '')
+    note          = request.data.get('note', '')
+
+    if not db:
+        return Response({'success': False, 'message': 'Servicio no disponible'}, status=503)
+    if review_status not in ('approved', 'rejected'):
+        return Response({'success': False, 'message': 'Estado inválido'}, status=400)
+
+    all_turns = _fs_all_turns()
+    matches = [t for t in all_turns if t.get('number') == turn_number]
+    if not matches:
+        return Response({'success': False, 'message': 'Turno no encontrado'}, status=404)
+    turn = matches[0]
+
+    uploaded = turn.get('uploaded_documents', [])
+    found = False
+    for d in uploaded:
+        if d.get('key') == document_key:
+            d['status'] = review_status
+            d['review_note'] = note
+            found = True
+            break
+    if not found:
+        return Response({'success': False, 'message': 'Documento no encontrado'}, status=404)
+
+    db.collection('turns').document(turn['_doc_id']).update({'uploaded_documents': uploaded})
+    broadcast_turn_update()
+    return Response({'success': True, 'uploaded_documents': uploaded})
+
+
+@csrf_exempt
+@api_view(['POST'])
+@jwt_required
+def send_virtual_chat_message(request):
+    turn_number = request.data.get('turn_number', '')
+    text        = (request.data.get('text', '') or '').strip()
+    username    = request.jwt_payload.get('username', '')
+    role        = request.jwt_payload.get('role', '')
+
+    if not db:
+        return Response({'success': False, 'message': 'Servicio no disponible'}, status=503)
+    if not turn_number or not text:
+        return Response({'success': False, 'message': 'Escribe un mensaje'}, status=400)
+    if len(text) > 1000:
+        return Response({'success': False, 'message': 'El mensaje es demasiado largo'}, status=400)
+
+    all_turns = _fs_all_turns()
+    matches = [t for t in all_turns if t.get('number') == turn_number]
+    if not matches:
+        return Response({'success': False, 'message': 'Turno no encontrado'}, status=404)
+    turn = matches[0]
+    if turn.get('service_type') != 'virtual':
+        return Response({'success': False, 'message': 'Este turno no admite chat'}, status=400)
+
+    if turn.get('created_by') == username:
+        sender_role = 'client'
+        sender_name = (turn.get('client_data') or {}).get('full_name') or username
+    elif role in ('admin', 'employee'):
+        sender_role = 'employee'
+        u = _fs_get_user(username)
+        sender_name = (u or {}).get('full_name') or username
+    else:
+        return Response({'success': False, 'message': 'No tienes permiso sobre este turno'}, status=403)
+
+    messages = turn.get('chat_messages', [])
+    messages.append({
+        'sender_name': sender_name,
+        'sender_role': sender_role,
+        'text':        text,
+        'at':          timezone.now().isoformat(),
+    })
+    db.collection('turns').document(turn['_doc_id']).update({'chat_messages': messages})
+    broadcast_turn_update()
+    return Response({'success': True, 'chat_messages': messages})
+
+
 @csrf_exempt
 @api_view(['GET'])
 def my_turns(request):
@@ -1149,6 +1307,71 @@ def chatbot_view(request):
         return ai_unavailable_response
 
     def event_stream():
+        yield json.dumps(first_event) + '\n'
+        for event in gen:
+            yield json.dumps(event) + '\n'
+
+    return StreamingHttpResponse(event_stream(), content_type='application/x-ndjson')
+
+
+@csrf_exempt
+@jwt_required
+def chatbot_voice_view(request):
+    """Chat por voz: recibe una nota de voz grabada en el navegador
+    (MediaRecorder, multipart/form-data), la transcribe con Gemini y
+    reenvía esa transcripción a la MISMA lógica de get_chatbot_reply_stream
+    que usa el chat escrito (mismas herramientas, mismo alcance). Así se
+    evita el reconocimiento de voz nativo del navegador, que depende de un
+    servicio en la nube de Google aparte y puede fallar por red."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Método no permitido'}, status=405)
+
+    payload  = request.jwt_payload
+    username = payload.get('username', '')
+    role     = payload.get('role', 'client')
+
+    audio_file = request.FILES.get('audio')
+    if not audio_file:
+        return JsonResponse({'error': 'Audio requerido'}, status=400)
+
+    try:
+        history = json.loads(request.POST.get('history') or '[]')
+    except (ValueError, TypeError):
+        history = []
+
+    ai_unavailable_response = JsonResponse({
+        'error': 'ai_unavailable',
+        'message': 'El asistente de voz no está disponible en este momento. '
+                   'Intenta de nuevo o escribe tu mensaje.',
+    }, status=503)
+
+    try:
+        transcript = transcribe_audio(audio_file.read(), audio_file.content_type or 'audio/webm')
+    except AIUnavailableError:
+        return ai_unavailable_response
+
+    # Si la transcripción es el centinela SIN_AUDIO (así lo pide el prompt de
+    # transcribe_audio cuando no hay voz entendible) o no tiene ninguna
+    # palabra real (p. ej. "00:00", "..." de ruido/silencio mal interpretado),
+    # no tiene sentido pasarla al chat: respondería a un texto sin sentido en
+    # vez de avisar que no entendió el audio.
+    if not transcript or transcript.strip().upper() == 'SIN_AUDIO' or not re.search(r'[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ]{2,}', transcript):
+        return JsonResponse({
+            'error': 'empty_transcript',
+            'message': 'No logré entender el audio. Intenta de nuevo hablando un poco más claro.',
+        }, status=422)
+
+    gen = get_chatbot_reply_stream(message=transcript, history=history, username=username, role=role)
+
+    try:
+        first_event = next(gen)
+    except AIUnavailableError:
+        return ai_unavailable_response
+    except StopIteration:
+        return ai_unavailable_response
+
+    def event_stream():
+        yield json.dumps({'type': 'transcript', 'text': transcript}) + '\n'
         yield json.dumps(first_event) + '\n'
         for event in gen:
             yield json.dumps(event) + '\n'

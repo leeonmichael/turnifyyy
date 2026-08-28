@@ -31,12 +31,12 @@
         </div>
         @if (currentTurn.sede) {
           <div class="calling-meta">
-            <span class="meta-chip sede-chip">📍 {{ currentTurn.sede }}</span>
+            <span class="meta-chip sede-chip">{{ currentTurn.sede }}</span>
           </div>
         }
         @if (currentTurn.called_by) {
           <div class="calling-meta">
-            <span class="meta-chip emp-chip">👤 {{ currentTurn.called_by }}</span>
+            <span class="meta-chip emp-chip">{{ currentTurn.called_by }}</span>
           </div>
         }
       } @else {

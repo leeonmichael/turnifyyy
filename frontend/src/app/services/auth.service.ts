@@ -71,7 +71,7 @@ export class AuthService {
     localStorage.removeItem('userTurn');
     localStorage.removeItem('turnMode');
     localStorage.removeItem('turnServiceType');
-    localStorage.removeItem('turnSede');
+    localStorage.removeItem('turnSedeId');
     localStorage.removeItem('client_documents');
     this.currentUser.next(null);
     this.currentRole.next(null);
@@ -83,6 +83,12 @@ export class AuthService {
 
   getCurrentRole(): string | null {
     return this.currentRole.value;
+  }
+
+  /** Empleado especializado en turnos virtuales — su "sede" es la cola virtual. */
+  isVirtualEmployee(): boolean {
+    const u = this.currentUser.value;
+    return !!u && u.role === 'employee' && u.sede_id === 'VIRTUAL';
   }
 
   isAuthenticated(): boolean {

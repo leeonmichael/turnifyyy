@@ -22,7 +22,11 @@ export class Employee implements OnInit, OnDestroy {
   currentTurn: any = null;
   stats = { waiting: 0, totalToday: 0, processed: 0 };
   showActionModal = false;
-  sedes: string[] = [];
+  sedes: any[] = [];
+
+  showRescheduleForm = false;
+  rescheduleDate = '';
+  readonly todayIso = new Date().toISOString().slice(0, 10);
 
   private destroy$ = new Subject<void>();
   private refreshInterval: any;
@@ -84,7 +88,7 @@ export class Employee implements OnInit, OnDestroy {
   loadEmployeeData(): void {
     this.http.get('/api/sedes/', { headers: this.getHeaders() }).subscribe({
       next: (data: any) => {
-        this.sedes = (data.sedes || []).map((s: any) => s.name);
+        this.sedes = data.sedes || [];
         this.cdr.detectChanges();
       },
       error: () => this.sedes = []
@@ -102,13 +106,13 @@ export class Employee implements OnInit, OnDestroy {
     this.ws.send({ action: 'get_all' });
   }
 
-  private get mySede(): string {
-    return this.currentUser?.sede || '';
+  private get mySedeId(): string {
+    return this.currentUser?.sede_id || '';
   }
 
   refreshTurnViews(): void {
-    const sede = this.mySede;
-    const myTurns = sede ? this.turns.filter((t: any) => t.sede === sede) : this.turns;
+    const sedeId = this.mySedeId;
+    const myTurns = sedeId ? this.turns.filter((t: any) => t.sede_id === sedeId) : this.turns;
 
     this.waitingTurns = myTurns
       .filter((t: any) => t.status === 'waiting')
@@ -157,6 +161,7 @@ export class Employee implements OnInit, OnDestroy {
     this.turn.finishCurrent().subscribe({
       next: () => {
         this.showActionModal = false;
+        this.showRescheduleForm = false;
         this.ws.send({ action: 'get_all' });
         this.cdr.detectChanges();
       },
@@ -164,15 +169,33 @@ export class Employee implements OnInit, OnDestroy {
     });
   }
 
-  rescheduleCurrent(): void {
-    this.turn.rescheduleCurrent().subscribe({
-      next: () => {
+  openRescheduleForm(): void {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    this.rescheduleDate = d.toISOString().slice(0, 10);
+    this.showRescheduleForm = true;
+    this.cdr.detectChanges();
+  }
+
+  cancelRescheduleForm(): void {
+    this.showRescheduleForm = false;
+    this.rescheduleDate = '';
+    this.cdr.detectChanges();
+  }
+
+  confirmReschedule(): void {
+    if (!this.rescheduleDate) { alert('Selecciona una fecha'); return; }
+    if (this.rescheduleDate < this.todayIso) { alert('No puedes reagendar para una fecha pasada'); return; }
+    this.turn.rescheduleCurrent(this.rescheduleDate).subscribe({
+      next: (data: any) => {
+        if (data.success === false) { alert(data.message || 'Error al reagendar turno'); return; }
         this.showActionModal = false;
+        this.showRescheduleForm = false;
+        this.rescheduleDate = '';
         this.ws.send({ action: 'get_all' });
         this.cdr.detectChanges();
-        this.router.navigate(['/reschedule-turns']);
       },
-      error: () => alert('Error al reagendar turno')
+      error: (err: any) => alert(err?.error?.message || 'Error al reagendar turno')
     });
   }
 
@@ -180,11 +203,17 @@ export class Employee implements OnInit, OnDestroy {
     this.turn.cancelCurrent().subscribe({
       next: () => {
         this.showActionModal = false;
+        this.showRescheduleForm = false;
         this.ws.send({ action: 'get_all' });
         this.cdr.detectChanges();
       },
       error: () => alert('Error al cancelar turno')
     });
+  }
+
+  closeActionModal(): void {
+    this.showActionModal = false;
+    this.showRescheduleForm = false;
   }
 
   logout(): void {

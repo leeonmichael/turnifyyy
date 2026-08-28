@@ -40,7 +40,7 @@ export default function HomeScreen({ navigation }: any) {
 
   // ---- Request form state ----
   const [sedes, setSedes] = useState<Sede[]>([]);
-  const [selectedSede, setSelectedSede] = useState('MOSQUERA');
+  const [selectedSedeId, setSelectedSedeId] = useState('');
   const [turnMode, setTurnMode] = useState<'presencial' | 'virtual'>('presencial');
   const [serviceType, setServiceType] = useState('general');
   const [requesting, setRequesting] = useState(false);
@@ -66,9 +66,9 @@ export default function HomeScreen({ navigation }: any) {
     try {
       const data = await turnsApi.getSedes();
       setSedes(data.sedes || []);
-      setSelectedSede((prev) => (data.sedes?.length && !data.sedes.some((s) => s.name === prev) ? data.sedes[0].name : prev));
+      setSelectedSedeId((prev) => (data.sedes?.length && !data.sedes.some((s) => s.id === prev) ? data.sedes[0].id : prev));
     } catch {
-      setSedes([{ id: 'MOSQUERA', name: 'MOSQUERA', city: '', address: '' }]);
+      setSedes([]);
     }
   }, []);
 
@@ -94,15 +94,19 @@ export default function HomeScreen({ navigation }: any) {
     setError('');
     setRequesting(true);
     try {
-      const sede = turnMode === 'presencial' ? selectedSede : 'VIRTUAL';
+      const sedeId = turnMode === 'presencial' ? selectedSedeId : 'VIRTUAL';
+      const sedeName = turnMode === 'presencial'
+        ? (sedes.find((s) => s.id === sedeId)?.name || '')
+        : 'Virtual';
       const type = turnMode === 'virtual' ? 'virtual' : serviceType;
-      const data = await turnsApi.createTurn(type, sede);
+      const data = await turnsApi.createTurn(type, sedeId);
       setActiveTurn({
         id: '',
         number: data.number,
         status: 'waiting',
         service_type: type,
-        sede,
+        sede: sedeName,
+        sede_id: sedeId,
         created_at: new Date().toISOString(),
       });
       loadActiveTurn();
@@ -253,13 +257,13 @@ export default function HomeScreen({ navigation }: any) {
                   {sedes.map((s) => (
                     <TouchableOpacity
                       key={s.id}
-                      style={[styles.optionRow, selectedSede === s.name && styles.optionRowActive]}
-                      onPress={() => setSelectedSede(s.name)}
+                      style={[styles.optionRow, selectedSedeId === s.id && styles.optionRowActive]}
+                      onPress={() => setSelectedSedeId(s.id)}
                       activeOpacity={0.8}
                     >
-                      <Ionicons name="location-outline" size={18} color={selectedSede === s.name ? colors.primary : colors.textMuted} />
-                      <Text style={[styles.optionText, selectedSede === s.name && styles.optionTextActive]}>{s.name}</Text>
-                      {selectedSede === s.name && <Ionicons name="checkmark-circle" size={18} color={colors.primary} style={{ marginLeft: 'auto' }} />}
+                      <Ionicons name="location-outline" size={18} color={selectedSedeId === s.id ? colors.primary : colors.textMuted} />
+                      <Text style={[styles.optionText, selectedSedeId === s.id && styles.optionTextActive]}>{s.name}</Text>
+                      {selectedSedeId === s.id && <Ionicons name="checkmark-circle" size={18} color={colors.primary} style={{ marginLeft: 'auto' }} />}
                     </TouchableOpacity>
                   ))}
                 </View>

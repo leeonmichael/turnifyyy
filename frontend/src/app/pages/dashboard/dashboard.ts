@@ -280,7 +280,7 @@ export class Dashboard implements OnInit, OnDestroy {
       cedula: this.empCedula,
       email: this.empEmail,
       phone: this.empPhone,
-      sede: this.empSede
+      sede_id: this.empSede
     }).subscribe({
       next: (data: any) => {
         if (data.success) {

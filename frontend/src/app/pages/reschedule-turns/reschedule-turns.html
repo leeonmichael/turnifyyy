@@ -31,13 +31,13 @@
             </span>
           </td>
           <td>
-            <span *ngIf="turn.scheduled_for" class="scheduled-badge">📅 {{ turn.scheduled_for }}</span>
+            <span *ngIf="turn.scheduled_for" class="scheduled-badge">{{ turn.scheduled_for }}</span>
             <span *ngIf="!turn.scheduled_for" class="no-date">—</span>
           </td>
           <td>
             <!-- Formulario de reagendar inline -->
             <div *ngIf="rescheduleTarget === turn.number" class="reschedule-form">
-              <input type="datetime-local" [(ngModel)]="rescheduleDate" class="date-input" />
+              <input type="date" [(ngModel)]="rescheduleDate" [min]="todayIso" class="date-input" />
               <div class="form-btns">
                 <button (click)="confirmReschedule(turn.number)" class="btn btn-success btn-sm">✓ Confirmar</button>
                 <button (click)="cancelReschedule()" class="btn btn-secondary btn-sm">Cancelar</button>
@@ -46,7 +46,7 @@
             <!-- Botones normales -->
             <div *ngIf="rescheduleTarget !== turn.number" class="action-btns">
               <button (click)="openReschedule(turn.number)" class="btn-reschedule btn btn-warning btn-sm">
-                📅 Reagendar
+                Reagendar
               </button>
               <button (click)="cancelTurn(turn.number)" class="btn-noshow btn btn-danger btn-sm">
                 ✗ No llegó

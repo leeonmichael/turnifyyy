@@ -93,7 +93,10 @@
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .empty-icon {
-  font-size: 3.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #cbd5e1;
   margin-bottom: 1rem;
 }
 
@@ -160,6 +163,7 @@
 .item-called   .accent-bar { background: #ef4444; }
 .item-finished .accent-bar { background: #10b981; }
 .item-cancelled .accent-bar { background: #cbd5e1; }
+.item-rescheduled .accent-bar { background: #1d4ed8; }
 
 /* Turn number column */
 .turn-number-col {
@@ -218,7 +222,8 @@
 }
 
 .date-icon {
-  font-size: 0.875rem;
+  display: inline-flex;
+  align-items: center;
 }
 
 .rescheduled-banner {
@@ -234,7 +239,23 @@
   border-radius: 20px;
 }
 
-.reschedule-icon { font-size: 0.875rem; }
+.reschedule-icon { display: inline-flex; align-items: center; }
+
+.meet-link-badge {
+  margin-top: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: #10b981;
+  color: white;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  padding: 0.35rem 0.9rem;
+  border-radius: 20px;
+  text-decoration: none;
+  transition: background 0.2s;
+}
+.meet-link-badge:hover { background: #059669; }
 
 /* Status column */
 .turn-status-col {

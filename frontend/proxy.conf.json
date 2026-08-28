@@ -4,7 +4,7 @@
     "secure": false,
     "changeOrigin": true,
     "logLevel": "debug",
-    "proxyTimeout": 30000
+    "proxyTimeout": 95000
   },
   "/ws/turns": {
     "target": "http://localhost:8000",

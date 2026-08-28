@@ -87,13 +87,14 @@ export class MyTurns implements OnInit, OnDestroy {
       general: 'General',
       preferential: 'Preferencial',
       vip: 'VIP',
-      emergency: 'Emergencia'
+      emergency: 'Emergencia',
+      virtual: 'Virtual'
     };
     return labels[type] || type;
   }
 
   get activeCount(): number {
-    return this.turns.filter(t => t.status === 'waiting' || t.status === 'called').length;
+    return this.turns.filter(t => t.status === 'waiting' || t.status === 'called' || t.status === 'rescheduled').length;
   }
 
   get finishedCount(): number {

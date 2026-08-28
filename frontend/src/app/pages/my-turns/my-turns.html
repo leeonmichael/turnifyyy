@@ -39,7 +39,12 @@
   <!-- Empty -->
   @if (!loading && turns.length === 0) {
     <div class="state-box empty-state">
-      <div class="empty-icon">🎫</div>
+      <div class="empty-icon">
+        <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 10a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v1a2 2 0 0 0 0 4v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1a2 2 0 0 0 0-4Z"></path>
+          <line x1="12" y1="8" x2="12" y2="16" stroke-dasharray="2 2"></line>
+        </svg>
+      </div>
       <h3>No tienes turnos registrados</h3>
       <p>Cuando pidas un turno, aparecerá aquí con su estado.</p>
       <a routerLink="/home" class="btn-primary-link">Pedir un turno</a>
@@ -56,6 +61,7 @@
           [class.item-called]="turn.status === 'called'"
           [class.item-finished]="turn.status === 'finished'"
           [class.item-cancelled]="turn.status === 'cancelled'"
+          [class.item-rescheduled]="turn.status === 'rescheduled'"
         >
           <!-- Left accent bar -->
           <div class="accent-bar"></div>
@@ -71,27 +77,57 @@
             <div class="turn-type">{{ getServiceLabel(turn.service_type) }}</div>
             <div class="turn-dates">
               <span class="date-item">
-                <span class="date-icon">📅</span>
+                <span class="date-icon">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2"></rect>
+                    <line x1="16" y1="2" x2="16" y2="6"></line>
+                    <line x1="8" y1="2" x2="8" y2="6"></line>
+                    <line x1="3" y1="10" x2="21" y2="10"></line>
+                  </svg>
+                </span>
                 Solicitado: {{ turn.created_at }}
               </span>
               @if (turn.finished_at && turn.status === 'finished') {
                 <span class="date-item">
-                  <span class="date-icon">✅</span>
+                  <span class="date-icon">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                  </span>
                   Atendido: {{ turn.finished_at }}
                 </span>
               }
               @if (turn.finished_at && turn.status === 'cancelled') {
                 <span class="date-item">
-                  <span class="date-icon">❌</span>
+                  <span class="date-icon">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <line x1="18" y1="6" x2="6" y2="18"></line>
+                      <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                  </span>
                   Cancelado: {{ turn.finished_at }}
                 </span>
               }
             </div>
             @if (turn.scheduled_for) {
               <div class="rescheduled-banner">
-                <span class="reschedule-icon">🔄</span>
+                <span class="reschedule-icon">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="23 4 23 10 17 10"></polyline>
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                  </svg>
+                </span>
                 Reagendado para: <strong>{{ turn.scheduled_for }}</strong>
               </div>
+            }
+            @if (turn.service_type === 'virtual' && turn.status === 'called' && turn.meet_link) {
+              <a [href]="turn.meet_link" target="_blank" rel="noopener" class="meet-link-badge">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="m22 8-6 4 6 4V8Z"></path>
+                  <rect x="2" y="6" width="14" height="12" rx="2"></rect>
+                </svg>
+                Unirse a videollamada
+              </a>
             }
           </div>
 

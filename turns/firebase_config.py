@@ -13,7 +13,8 @@ try:
         cred=credentials.Certificate(json.loads(key_json_env))
     else:
         cred=credentials.Certificate(key_path)
-    firebase_admin.initialize_app(cred)
+    storage_bucket = os.environ.get("FIREBASE_STORAGE_BUCKET") or f"{cred.project_id}.appspot.com"
+    firebase_admin.initialize_app(cred, {"storageBucket": storage_bucket})
     db=firestore.client()
 except:
     db=None

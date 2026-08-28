@@ -4,6 +4,7 @@ Movidos desde turns/views.py para que puedan ser reutilizados tanto por las
 vistas HTTP como por el asistente de IA (turns/ai_assistant.py) sin generar
 un import circular con views.py.
 """
+import uuid
 from datetime import datetime
 from django.utils import timezone
 from channels.layers import get_channel_layer
@@ -13,6 +14,12 @@ from .firebase_config import db
 
 def get_turn_prefix(service_type: str) -> str:
     return {'general': 'A', 'preferential': 'B', 'emergency': 'E', 'vip': 'V', 'virtual': 'W'}.get(service_type, 'A')
+
+
+def generate_meet_link(turn_number: str) -> str:
+    """Sala de Jitsi Meet única por turno — no requiere cuenta ni credenciales."""
+    room = f"Turnify-{turn_number}-{uuid.uuid4().hex[:8]}"
+    return f"https://meet.jit.si/{room}"
 
 
 def _fmt_time(iso_str: str) -> str:
@@ -31,6 +38,29 @@ def _fmt_datetime(iso_str: str) -> str:
         return datetime.fromisoformat(str(iso_str)).strftime('%d/%m/%Y %H:%M')
     except Exception:
         return str(iso_str)
+
+
+def _fmt_date(date_str: str) -> str:
+    """Como _fmt_datetime pero solo fecha (scheduled_for es date-only, 'YYYY-MM-DD')."""
+    if not date_str:
+        return ''
+    try:
+        return datetime.strptime(str(date_str), '%Y-%m-%d').strftime('%d/%m/%Y')
+    except Exception:
+        return str(date_str)
+
+
+def validate_schedule_date(date_str: str) -> tuple:
+    """(fecha_iso, None) si es válida y no es pasada; (None, mensaje_error) si no."""
+    if not date_str:
+        return None, 'Debes indicar una fecha'
+    try:
+        d = datetime.strptime(str(date_str), '%Y-%m-%d').date()
+    except ValueError:
+        return None, 'Fecha inválida'
+    if d < timezone.now().date():
+        return None, 'No puedes reagendar para una fecha pasada'
+    return d.isoformat(), None
 
 
 def _fs_all_turns():
@@ -66,26 +96,50 @@ def _fs_get_user(username: str):
     return doc.to_dict() if doc.exists else None
 
 
-def _get_employee_sede(username: str, role: str) -> str:
+def _get_employee_sede_id(username: str, role: str) -> str:
     if role == 'employee' and username:
         u = _fs_get_user(username)
-        return (u or {}).get('sede', '')
+        return (u or {}).get('sede_id', '')
     return ''
 
 
-def generate_turn_fb(prefix: str, sede: str) -> str:
-    """Generate next turn number for a given prefix and sede."""
+def _sedes_map() -> dict:
+    """{sede_id: name} de todas las sedes (activas e inactivas)."""
+    if not db:
+        return {}
+    return {doc.id: (doc.to_dict() or {}).get('name', '') for doc in db.collection('sedes').stream()}
+
+
+def _resolve_sede_name(sede_id: str, sedes_map: dict | None = None) -> str:
+    """Resuelve el nombre de una sede en vivo a partir de su id, para que un
+    rename se refleje al instante en turnos/empleados sin tener que tocarlos."""
+    if sede_id == 'VIRTUAL':
+        return 'Virtual'
+    if not sede_id:
+        return ''
+    m = sedes_map if sedes_map is not None else _sedes_map()
+    return m.get(sede_id, '')
+
+
+def generate_turn_fb(prefix: str, sede_id: str) -> str:
+    """Generate next turn number for a given prefix and sede_id.
+
+    También cuenta turnos "viejos" que aún no fueron migrados a sede_id (solo
+    tienen el campo de texto 'sede' de antes) y coinciden por nombre/valor,
+    para no reutilizar un número ya usado por esa sede antes de la migración."""
     if not db:
         return f"{prefix}1"
     try:
-        docs = db.collection('turns').where('sede', '==', sede).stream() if sede else db.collection('turns').stream()
+        legacy_value = 'VIRTUAL' if sede_id == 'VIRTUAL' else _sedes_map().get(sede_id, '')
         pl = len(prefix)
-        nums = [
-            int(t[pl:])
-            for doc in docs
-            for t in [doc.to_dict().get('number', '') if doc.to_dict() else '']
-            if t.startswith(prefix) and len(t) > pl and t[pl:].isdigit()
-        ]
+        nums = []
+        for doc in db.collection('turns').stream():
+            d = doc.to_dict() or {}
+            if sede_id and d.get('sede_id') != sede_id and (not legacy_value or d.get('sede') != legacy_value):
+                continue
+            t = d.get('number', '')
+            if t.startswith(prefix) and len(t) > pl and t[pl:].isdigit():
+                nums.append(int(t[pl:]))
         return f"{prefix}{max(nums) + 1}" if nums else f"{prefix}1"
     except Exception:
         return f"{prefix}1"
@@ -96,6 +150,7 @@ def broadcast_turn_update():
     if not db:
         return
     try:
+        sedes_map = _sedes_map()
         turns_data = []
         for doc in db.collection('turns').stream():
             t = doc.to_dict()
@@ -106,11 +161,16 @@ def broadcast_turn_update():
                 'number':       t.get('number', ''),
                 'status':       t.get('status', 'waiting'),
                 'service_type': t.get('service_type', 'general'),
-                'sede':         t.get('sede', ''),
+                'sede_id':      t.get('sede_id', ''),
+                'sede':         _resolve_sede_name(t.get('sede_id', ''), sedes_map),
                 'created_at':   _fmt_time(t.get('created_at', '')),
                 'called_by':    t.get('called_by', ''),
                 'created_by':   t.get('created_by', ''),
-                'scheduled_for':_fmt_datetime(t.get('scheduled_for', ''))
+                'scheduled_for':_fmt_date(t.get('scheduled_for', '')),
+                'meet_link':          t.get('meet_link', ''),
+                'required_documents': t.get('required_documents', []),
+                'uploaded_documents': t.get('uploaded_documents', []),
+                'chat_messages':      t.get('chat_messages', []),
             })
         turns_data.sort(key=lambda x: x.get('created_at', ''), reverse=True)
         channel_layer = get_channel_layer()

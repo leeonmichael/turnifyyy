@@ -29,7 +29,9 @@ def get_asset_urls():
     assets = []
     try:
         for f in DIST_DIR.iterdir():
-            if f.is_file() and (f.suffix in ['.css', '.js', '.ico']):
+            if f.is_file() and (f.suffix.lower() in [
+                '.css', '.js', '.ico', '.png', '.jpg', '.jpeg', '.svg', '.gif', '.webp', '.woff', '.woff2',
+            ]):
                 assets.append(re_path(f'^{f.name}$', make_serve_static(f.name)))
     except:
         pass

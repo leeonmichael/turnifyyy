@@ -122,7 +122,8 @@
       <input type="text" [(ngModel)]="empPhone" name="empPhone" placeholder="Teléfono" class="form-control" />
       <select [(ngModel)]="empSede" name="empSede" class="form-control form-select">
         <option value="">Seleccione Sede</option>
-        <option *ngFor="let sede of sedes" [value]="sede.name">{{ sede.name }} ({{ sede.city }})</option>
+        <option *ngFor="let sede of sedes" [value]="sede.id">{{ sede.name }} ({{ sede.city }})</option>
+        <option value="VIRTUAL">Turnos Virtuales (especialista)</option>
       </select>
       <button class="btn btn-primary" (click)="createEmployee()">+ Crear Empleado</button>
     </div>
@@ -141,9 +142,10 @@
         <input type="text" [(ngModel)]="editingEmployee.cedula" placeholder="Número de Documento" class="form-control" />
         <input type="email" [(ngModel)]="editingEmployee.email" placeholder="Correo" class="form-control" />
         <input type="text" [(ngModel)]="editingEmployee.phone" placeholder="Teléfono" class="form-control" />
-        <select [(ngModel)]="editingEmployee.sede" class="form-control form-select">
+        <select [(ngModel)]="editingEmployee.sede_id" class="form-control form-select">
           <option value="">Seleccione Sede</option>
-          <option *ngFor="let sede of sedes" [value]="sede.name">{{ sede.name }} ({{ sede.city }})</option>
+          <option *ngFor="let sede of sedes" [value]="sede.id">{{ sede.name }} ({{ sede.city }})</option>
+          <option value="VIRTUAL">Turnos Virtuales (especialista)</option>
         </select>
         <input type="password" [(ngModel)]="editingEmployee.new_password" placeholder="Nueva Contraseña (opcional)" class="form-control" />
         <button class="btn btn-success btn-sm" (click)="saveEdit()">Guardar</button>

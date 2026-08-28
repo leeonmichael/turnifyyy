@@ -36,6 +36,10 @@ urlpatterns=[
     path('export/excel/', views.export_excel, name='export_excel'),
     path('documents/', views.set_required_documents, name='set_required_documents'),
     path('upload-document/', views.upload_document, name='upload_document'),
+    path('virtual/document-requirements/', views.get_document_requirements, name='get_document_requirements'),
+    path('virtual/upload-document/', views.upload_virtual_document, name='upload_virtual_document'),
+    path('virtual/review-document/', views.review_virtual_document, name='review_virtual_document'),
+    path('virtual/send-message/', views.send_virtual_chat_message, name='send_virtual_chat_message'),
     path('my-turns/', views.my_turns, name='my_turns'),
     path('register-push-token/', views.register_push_token, name='register_push_token'),
     path('my-active-turn/', views.get_my_active_turn, name='get_my_active_turn'),
@@ -46,5 +50,6 @@ urlpatterns=[
     path('sedes/update/<str:sede_id>/', views.update_sede, name='update_sede'),
     path('sedes/delete/<str:sede_id>/', views.delete_sede, name='delete_sede'),
     path('chatbot/', views.chatbot_view, name='chatbot'),
+    path('chatbot/voice/', views.chatbot_voice_view, name='chatbot_voice'),
     path('chatbot/proactive/', views.chatbot_proactive_view, name='chatbot_proactive'),
 ]

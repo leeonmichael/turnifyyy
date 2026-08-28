@@ -25,7 +25,7 @@ export class Login implements OnInit {
 
   ngOnInit(): void {
     if (this.auth.isAuthenticated()) {
-      this.navigateByRole(this.auth.getCurrentRole());
+      this.navigateByRole(this.auth.getCurrentUser());
     }
   }
 
@@ -33,11 +33,14 @@ export class Login implements OnInit {
     this.showPassword = !this.showPassword;
   }
 
-  navigateByRole(role: string | null): void {
+  navigateByRole(user: any): void {
+    const role = user?.role;
     if (role === 'client') {
       this.router.navigate(['/home']);
     } else if (role === 'employee') {
-      this.router.navigate(['/employee']);
+      // El empleado especializado en turnos virtuales (sede_id='VIRTUAL')
+      // solo tiene acceso a esa interfaz, no al panel presencial.
+      this.router.navigate([user?.sede_id === 'VIRTUAL' ? '/virtual-turns' : '/employee']);
     } else if (role === 'admin') {
       this.router.navigate(['/dashboard']);
     } else {
@@ -59,7 +62,7 @@ export class Login implements OnInit {
         this.loading = false;
         if (data.success) {
           this.auth.setSession(data.token, data.user);
-          this.navigateByRole(data.user.role);
+          this.navigateByRole(data.user);
         } else {
           this.error = data.message || 'Credenciales inválidas';
         }

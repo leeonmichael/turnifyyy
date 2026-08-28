@@ -22,3 +22,14 @@ export const roleGuard: CanActivateFn = (route: ActivatedRouteSnapshot, state: R
   }
   return true;
 };
+
+// Bloquea al empleado especializado en turnos virtuales del panel presencial
+// (y del resto de rutas de empleado normal) — para él solo existe /virtual-turns.
+export const nonVirtualEmployeeGuard: CanActivateFn = (): boolean | UrlTree => {
+  const auth = inject(AuthService);
+  const router = inject(Router);
+  if (auth.isVirtualEmployee()) {
+    return router.createUrlTree(['/virtual-turns']);
+  }
+  return true;
+};

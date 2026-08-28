@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { AuthService } from '../../services/auth.service';
+import { TurnService } from '../../services/turn.service';
 import { WebsocketService } from '../../services/websocket.service';
 import { takeUntil } from 'rxjs/operators';
 import { Subject } from 'rxjs';
@@ -20,12 +21,14 @@ export class RescheduleTurns implements OnInit, OnDestroy {
   loading = false;
   rescheduleTarget: string | null = null;
   rescheduleDate = '';
+  readonly todayIso = new Date().toISOString().slice(0, 10);
 
   private destroy$ = new Subject<void>();
   private refreshInterval: any;
 
   constructor(
     private auth: AuthService,
+    private turn: TurnService,
     private ws: WebsocketService,
     private http: HttpClient,
     private router: Router,
@@ -80,24 +83,22 @@ export class RescheduleTurns implements OnInit, OnDestroy {
     this.rescheduleTarget = turnNumber;
     const d = new Date();
     d.setDate(d.getDate() + 1);
-    this.rescheduleDate = d.toISOString().slice(0, 16);
+    this.rescheduleDate = d.toISOString().slice(0, 10);
     this.cdr.detectChanges();
   }
 
   confirmReschedule(turnNumber: string): void {
-    if (!this.rescheduleDate) { alert('Selecciona una fecha y hora'); return; }
-    this.http.put(
-      `/api/reschedule-turn/${turnNumber}/`,
-      { scheduled_date: this.rescheduleDate },
-      { headers: this.getHeaders() }
-    ).subscribe({
+    if (!this.rescheduleDate) { alert('Selecciona una fecha'); return; }
+    if (this.rescheduleDate < this.todayIso) { alert('No puedes reagendar para una fecha pasada'); return; }
+    this.turn.rescheduleSpecificTurn(turnNumber, this.rescheduleDate).subscribe({
       next: (data: any) => {
+        if (data.success === false) { alert(data.message || 'Error al reagendar'); return; }
         this.rescheduleTarget = null;
         this.rescheduleDate = '';
         this.loadTurns();
         this.cdr.detectChanges();
       },
-      error: () => alert('Error al reagendar')
+      error: (err: any) => alert(err?.error?.message || 'Error al reagendar')
     });
   }
 

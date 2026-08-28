@@ -22,9 +22,9 @@ type View = 'request' | 'tracking';
 export class Home implements OnInit, OnDestroy {
   // ---- Form state ----
   serviceType = 'general';
-  selectedSede = 'MOSQUERA';
+  selectedSedeId = '';
   turnMode = 'presencial';
-  sedeOptions: string[] = [];
+  sedeOptions: any[] = [];
   currentUser: any = null;
   documents: string[] = [];
   requestingTurn = false;
@@ -38,13 +38,47 @@ export class Home implements OnInit, OnDestroy {
   // ---- Active turn ----
   userTurn: string | null = null;
   userTurnSede = '';
-  userTurnStatus = '';        // 'waiting' | 'called' | 'finished' | 'cancelled'
+  userTurnSedeId = '';
+  userTurnStatus = '';        // 'waiting' | 'called' | 'finished' | 'cancelled' | 'rescheduled'
+  userTurnServiceType = '';
+  userTurnScheduledFor = '';
   positionNum = 0;
   turnsAhead = 0;
 
+  // ---- Turno virtual: documentos + videollamada ----
+  requiredDocuments: any[] = [];
+  uploadedDocuments: any[] = [];
+  meetLink = '';
+  uploadingKey: string | null = null;
+  docUploadError = '';
+
+  // ---- Turno virtual: chat con el empleado ----
+  chatMessages: any[] = [];
+  chatInput = '';
+  sendingChat = false;
+
+  get isVirtualTurn(): boolean { return this.userTurnServiceType === 'virtual'; }
+  docStatusFor(key: string): any {
+    return this.uploadedDocuments.find((d: any) => d.key === key) || null;
+  }
+
+  get displayChatMessages(): any[] {
+    return this.chatMessages.map((m: any) => ({
+      ...m,
+      isMine: m.sender_role === 'client',
+      time: this.formatMsgTime(m.at),
+    }));
+  }
+
+  private formatMsgTime(iso: string): string {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return isNaN(d.getTime()) ? '' : d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+  }
+
   // ---- Staff (admin/employee panel) ----
   turns: any[] = [];
-  filterSede = '';
+  filterSedeId = '';
 
   // ---- Alarm dedup flags ----
   private warnAlarmPlayed = false;
@@ -66,18 +100,26 @@ export class Home implements OnInit, OnDestroy {
   get isCloseSoon(): boolean { return this.userTurnStatus === 'waiting' && this.turnsAhead > 0 && this.turnsAhead <= 2; }
   get isWaitingFar(): boolean{ return this.userTurnStatus === 'waiting' && this.turnsAhead > 2; }
   get isFinished(): boolean  { return this.userTurnStatus === 'finished'; }
+  get isRescheduled(): boolean { return this.userTurnStatus === 'rescheduled'; }
 
   get waitingCount(): number {
     const base = this.turns.filter((t: any) => t.status === 'waiting');
-    return this.filterSede ? base.filter((t: any) => t.sede === this.filterSede).length : base.length;
+    return this.filterSedeId ? base.filter((t: any) => t.sede_id === this.filterSedeId).length : base.length;
   }
   get callingCount(): number {
     const base = this.turns.filter((t: any) => t.status === 'called');
-    return this.filterSede ? base.filter((t: any) => t.sede === this.filterSede).length : base.length;
+    return this.filterSedeId ? base.filter((t: any) => t.sede_id === this.filterSedeId).length : base.length;
   }
   get finishedCount(): number {
     const base = this.turns.filter((t: any) => t.status === 'finished');
-    return this.filterSede ? base.filter((t: any) => t.sede === this.filterSede).length : base.length;
+    return this.filterSedeId ? base.filter((t: any) => t.sede_id === this.filterSedeId).length : base.length;
+  }
+
+  // Usado por la lista de "Turnos en el Sistema" — antes se pintaba `turns`
+  // directo, sin aplicar el filtro de sede, así que el selector no tenía
+  // ningún efecto sobre la lista (solo sobre los contadores de arriba).
+  get filteredTurns(): any[] {
+    return this.filterSedeId ? this.turns.filter((t: any) => t.sede_id === this.filterSedeId) : this.turns;
   }
 
   constructor(
@@ -97,16 +139,21 @@ export class Home implements OnInit, OnDestroy {
 
     this.http.get('/api/sedes/').subscribe({
       next: (data: any) => {
-        this.sedeOptions = (data.sedes || []).map((s: any) => s.name);
-        if (this.sedeOptions.length && !this.sedeOptions.includes(this.selectedSede)) {
-          this.selectedSede = this.sedeOptions[0];
+        this.sedeOptions = data.sedes || [];
+        if (this.sedeOptions.length && !this.sedeOptions.some((s: any) => s.id === this.selectedSedeId)) {
+          this.selectedSedeId = this.sedeOptions[0].id;
         }
         this.cdr.detectChanges();
       },
-      error: () => { this.sedeOptions = ['MOSQUERA', 'MADRID']; }
+      error: () => { this.sedeOptions = []; }
     });
 
     this.documents = JSON.parse(localStorage.getItem('client_documents') || '[]');
+
+    this.turn.getVirtualDocumentRequirements().subscribe({
+      next: (data: any) => { this.requiredDocuments = data.documents || []; this.cdr.detectChanges(); },
+      error: () => {}
+    });
 
     // WebSocket subscription
     this.ws.messages$.pipe(takeUntil(this.destroy$)).subscribe({
@@ -161,16 +208,22 @@ export class Home implements OnInit, OnDestroy {
         if (t) {
           this.userTurn      = t.number;
           this.userTurnSede  = t.sede || '';
+          this.userTurnSedeId = t.sede_id || '';
           this.userTurnStatus = t.status;
+          this.userTurnServiceType = t.service_type || '';
+          this.meetLink            = t.meet_link || '';
+          this.uploadedDocuments   = t.uploaded_documents || [];
+          this.chatMessages        = t.chat_messages || [];
+          if (t.required_documents && t.required_documents.length) this.requiredDocuments = t.required_documents;
           localStorage.setItem('userTurn', t.number);
-          if (t.sede) localStorage.setItem('turnSede', t.sede);
+          if (t.sede_id) localStorage.setItem('turnSedeId', t.sede_id);
           this.view = 'tracking';
           this.ws.send({ action: 'get_all' });
           setTimeout(() => this.pollPosition(), 800); // calcula posición rápido
         } else {
           // No active turn → clear any stale localStorage
           localStorage.removeItem('userTurn');
-          localStorage.removeItem('turnSede');
+          localStorage.removeItem('turnSedeId');
           this.view = 'request';
         }
         this.cdr.detectChanges();
@@ -178,7 +231,7 @@ export class Home implements OnInit, OnDestroy {
       error: () => {
         // If auth fails or network error, fall back to localStorage
         const stored = localStorage.getItem('userTurn');
-        if (stored) { this.userTurn = stored; this.userTurnSede = localStorage.getItem('turnSede') || ''; this.view = 'tracking'; }
+        if (stored) { this.userTurn = stored; this.userTurnSedeId = localStorage.getItem('turnSedeId') || ''; this.view = 'tracking'; }
         this.cdr.detectChanges();
       }
     });
@@ -201,11 +254,11 @@ export class Home implements OnInit, OnDestroy {
   syncTurnStatus(allTurns: any[]): void {
     if (!this.userTurn) return;
 
-    const sede = this.userTurnSede;
+    const sedeId = this.userTurnSedeId;
 
     // Find turn: try with sede first, fall back to number-only to handle any casing/mismatch
     let mine = allTurns.find((t: any) =>
-      t.number === this.userTurn && (sede ? t.sede === sede : true)
+      t.number === this.userTurn && (sedeId ? t.sede_id === sedeId : true)
     );
     if (!mine) {
       mine = allTurns.find((t: any) => t.number === this.userTurn);
@@ -220,8 +273,15 @@ export class Home implements OnInit, OnDestroy {
     this.userTurnStatus = mine.status;
     // Keep sede in sync with what the server says
     if (mine.sede) this.userTurnSede = mine.sede;
+    if (mine.sede_id) this.userTurnSedeId = mine.sede_id;
+    if (mine.service_type) this.userTurnServiceType = mine.service_type;
+    if (mine.scheduled_for) this.userTurnScheduledFor = mine.scheduled_for;
+    this.meetLink          = mine.meet_link || this.meetLink;
+    this.uploadedDocuments = mine.uploaded_documents || this.uploadedDocuments;
+    this.chatMessages      = mine.chat_messages || this.chatMessages;
+    if (mine.required_documents && mine.required_documents.length) this.requiredDocuments = mine.required_documents;
 
-    if (mine.status === 'finished' || mine.status === 'cancelled') {
+    if (mine.status === 'finished' || mine.status === 'cancelled' || mine.status === 'rescheduled') {
       this.positionNum = 0;
       this.turnsAhead  = 0;
       return;
@@ -239,10 +299,10 @@ export class Home implements OnInit, OnDestroy {
 
     // status === 'waiting' — compute position within the same sede queue
     this.calledAlarmPlayed = false;
-    const effectiveSede = mine.sede || sede;
+    const effectiveSedeId = mine.sede_id || sedeId;
 
     const waiting = allTurns
-      .filter((t: any) => t.status === 'waiting' && (!effectiveSede || t.sede === effectiveSede))
+      .filter((t: any) => t.status === 'waiting' && (!effectiveSedeId || t.sede_id === effectiveSedeId))
       .sort((a: any, b: any) => (a.created_at || '').localeCompare(b.created_at || ''));
 
     let idx = waiting.findIndex((t: any) => t.number === this.userTurn);
@@ -290,16 +350,26 @@ export class Home implements OnInit, OnDestroy {
     this.proactiveToastText = text;
     this.cdr.detectChanges();
     if (this.proactiveToastTimer) clearTimeout(this.proactiveToastTimer);
+    // Tiempo de lectura proporcional al largo del mensaje (antes eran 8s
+    // fijos y no alcanzaba a leerse completo), con un mínimo generoso y un
+    // techo para que no se quede pegado en pantalla indefinidamente.
+    const readTimeMs = Math.max(14000, Math.min(24000, text.length * 110));
     this.proactiveToastTimer = setTimeout(() => {
       this.proactiveToastText = null;
       this.cdr.detectChanges();
-    }, 8000);
+    }, readTimeMs);
   }
 
   private resetTurnState(): void {
     this.userTurn          = null;
     this.userTurnSede      = '';
+    this.userTurnSedeId    = '';
     this.userTurnStatus    = '';
+    this.userTurnServiceType = '';
+    this.userTurnScheduledFor = '';
+    this.meetLink           = '';
+    this.uploadedDocuments  = [];
+    this.chatMessages       = [];
     this.positionNum       = 0;
     this.turnsAhead        = 0;
     this.warnAlarmPlayed   = false;
@@ -307,7 +377,7 @@ export class Home implements OnInit, OnDestroy {
     this.turnConfirmed     = false;
     this.view              = 'request';   // ← fix: siempre vuelve al formulario
     localStorage.removeItem('userTurn');
-    localStorage.removeItem('turnSede');
+    localStorage.removeItem('turnSedeId');
     localStorage.removeItem('turnMode');
     localStorage.removeItem('turnServiceType');
   }
@@ -324,22 +394,31 @@ export class Home implements OnInit, OnDestroy {
     this.errorMsg = '';
     this.cdr.detectChanges();
 
-    const sede        = this.turnMode === 'presencial' ? this.selectedSede : 'VIRTUAL';
+    const sedeId       = this.turnMode === 'presencial' ? this.selectedSedeId : 'VIRTUAL';
+    const sedeName      = this.turnMode === 'presencial'
+      ? (this.sedeOptions.find((s: any) => s.id === sedeId)?.name || '')
+      : 'Virtual';
     const serviceType = this.turnMode === 'virtual' ? 'virtual' : this.serviceType;
 
-    this.turn.createTurn(serviceType, sede).subscribe({
+    this.turn.createTurn(serviceType, sedeId).subscribe({
       next: (data: any) => {
         this.requestingTurn    = false;
         this.userTurn          = data.number;
-        this.userTurnSede      = sede;
+        this.userTurnSede      = sedeName;
+        this.userTurnSedeId    = sedeId;
         this.userTurnStatus    = 'waiting';
+        this.userTurnServiceType = serviceType;
+        this.meetLink           = data.meet_link || '';
+        this.uploadedDocuments  = [];
+        this.chatMessages       = [];
+        if (data.required_documents) this.requiredDocuments = data.required_documents;
         this.positionNum       = 0;
         this.turnsAhead        = 0;
         this.warnAlarmPlayed   = false;
         this.calledAlarmPlayed = false;
         this.turnConfirmed     = false;
         localStorage.setItem('userTurn', data.number);
-        localStorage.setItem('turnSede', sede);
+        localStorage.setItem('turnSedeId', sedeId);
         localStorage.setItem('turnMode', this.turnMode);
         this.view          = 'tracking';
         this.showTurnModal = true;
@@ -372,6 +451,55 @@ export class Home implements OnInit, OnDestroy {
         this.cdr.detectChanges();
       },
       error: () => { this.errorMsg = 'Error al cancelar el turno'; this.cdr.detectChanges(); }
+    });
+  }
+
+  onDocumentFileSelected(key: string, event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files && input.files[0];
+    if (!file || !this.userTurn) return;
+
+    this.docUploadError = '';
+    this.uploadingKey = key;
+    this.cdr.detectChanges();
+
+    this.turn.uploadVirtualDocument(this.userTurn, key, file).subscribe({
+      next: (data: any) => {
+        this.uploadingKey = null;
+        if (data.success) {
+          this.uploadedDocuments = data.uploaded_documents || this.uploadedDocuments;
+        } else {
+          this.docUploadError = data.message || 'No se pudo subir el documento';
+        }
+        input.value = '';
+        this.cdr.detectChanges();
+      },
+      error: (err: any) => {
+        this.uploadingKey = null;
+        this.docUploadError = err?.error?.message || 'No se pudo subir el documento';
+        input.value = '';
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  sendChatMessage(): void {
+    const text = this.chatInput.trim();
+    if (!text || !this.userTurn || this.sendingChat) return;
+    this.sendingChat = true;
+    this.turn.sendVirtualChatMessage(this.userTurn, text).subscribe({
+      next: (data: any) => {
+        this.sendingChat = false;
+        if (data.success) {
+          this.chatMessages = data.chat_messages || this.chatMessages;
+          this.chatInput = '';
+        }
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.sendingChat = false;
+        this.cdr.detectChanges();
+      }
     });
   }
 

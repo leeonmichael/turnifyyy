@@ -4,7 +4,7 @@
 
     @if (proactiveToastText) {
       <div class="assistant-toast">
-        <span class="assistant-toast-icon">🤖</span>
+        <img class="assistant-toast-icon" src="/avatar-ia.jpeg" alt="TURNITY">
         <div class="assistant-toast-text">{{ proactiveToastText }}</div>
         <button class="assistant-toast-close" (click)="proactiveToastText = null" aria-label="Cerrar">×</button>
       </div>
@@ -55,11 +55,32 @@
         @if (turnMode === 'presencial') {
           <div class="form-group">
             <label class="form-label">Sede</label>
-            <select [(ngModel)]="selectedSede" class="form-select">
-              @for (s of sedeOptions; track s) {
-                <option [value]="s">{{ s }}</option>
+            <select [(ngModel)]="selectedSedeId" class="form-select">
+              @for (s of sedeOptions; track s.id) {
+                <option [value]="s.id">{{ s.name }}</option>
               }
             </select>
+          </div>
+        }
+
+        @if (turnMode === 'virtual' && requiredDocuments.length > 0) {
+          <div class="virtual-docs-preview">
+            <div class="virtual-docs-preview-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 4h6a1 1 0 0 1 1 1v1a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z"></path>
+                <path d="M8 4H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"></path>
+              </svg>
+              Ten a la mano estos documentos
+            </div>
+            <ul class="virtual-docs-preview-list">
+              @for (doc of requiredDocuments; track doc.key) {
+                <li>
+                  {{ doc.label }}
+                  <span class="doc-req-tag" [class.doc-optional-tag]="!doc.required">{{ doc.required ? 'Obligatorio' : 'Opcional' }}</span>
+                </li>
+              }
+            </ul>
+            <p class="virtual-docs-preview-hint">Los subirás justo después de agendar el turno.</p>
           </div>
         }
 
@@ -71,6 +92,38 @@
           {{ requestingTurn ? 'Solicitando...' : 'Pedir mi Turno' }}
         </button>
       </div>
+
+      <div class="how-it-works">
+        <div class="how-it-works-step">
+          <div class="how-it-works-num">1</div>
+          <div>
+            <div class="how-it-works-title">Elige tu atención</div>
+            <div class="how-it-works-text">Selecciona el tipo de turno y la modalidad, presencial o virtual.</div>
+          </div>
+        </div>
+        <div class="how-it-works-step">
+          <div class="how-it-works-num">2</div>
+          <div>
+            <div class="how-it-works-title">Recibe tu número</div>
+            <div class="how-it-works-text">Al instante, con tu posición y tiempo estimado en tiempo real.</div>
+          </div>
+        </div>
+        <div class="how-it-works-step">
+          <div class="how-it-works-num">3</div>
+          <div>
+            <div class="how-it-works-title">Te avisamos</div>
+            <div class="how-it-works-text">Una alarma y TURNITY te avisan cuando esté cerca tu turno.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="assistant-hint-card" (click)="openChatbotModal()">
+        <img src="/avatar-ia.jpeg" alt="TURNITY" class="assistant-hint-avatar">
+        <div>
+          <div class="assistant-hint-title">¿Tienes dudas?</div>
+          <div class="assistant-hint-text">Pregúntale a TURNITY, tu asistente virtual, por texto o por voz.</div>
+        </div>
+      </div>
     }
 
     <!-- ======= VISTA: SEGUIMIENTO DEL TURNO ======= -->
@@ -80,32 +133,145 @@
       <div class="turn-hero"
            [class.turn-hero-warn]="isCloseSoon || isNext"
            [class.turn-hero-called]="isCalled"
-           [class.turn-hero-done]="isFinished || userTurnStatus === 'cancelled'">
+           [class.turn-hero-done]="isFinished || userTurnStatus === 'cancelled' || isRescheduled">
         <div class="turn-hero-label">TU TURNO</div>
         <div class="turn-hero-number">{{ userTurn }}</div>
         @if (userTurnSede) {
-          <div class="turn-hero-sede">📍 {{ userTurnSede }}</div>
+          <div class="turn-hero-sede">{{ userTurnSede }}</div>
         }
         <!-- Status chip -->
         <div class="turn-status-chip"
              [class.chip-waiting]="userTurnStatus === 'waiting' || userTurnStatus === ''"
              [class.chip-called]="isCalled"
              [class.chip-done]="isFinished"
-             [class.chip-cancelled]="userTurnStatus === 'cancelled'">
+             [class.chip-cancelled]="userTurnStatus === 'cancelled'"
+             [class.chip-rescheduled]="isRescheduled">
           @if (userTurnStatus === 'waiting' || userTurnStatus === '') { En espera }
           @if (isCalled)                                              { Llamando }
           @if (isFinished)                                            { Atendido }
           @if (userTurnStatus === 'cancelled')                        { Cancelado }
+          @if (isRescheduled)                                         { Reagendado }
         </div>
       </div>
+
+      <!-- TURNO VIRTUAL: documentos requeridos -->
+      @if (isVirtualTurn && requiredDocuments.length > 0 && !isFinished && userTurnStatus !== 'cancelled') {
+        <div class="virtual-docs-card">
+          <div class="virtual-docs-card-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 4h6a1 1 0 0 1 1 1v1a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z"></path>
+              <path d="M8 4H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"></path>
+            </svg>
+            Documentos requeridos
+          </div>
+
+          @if (docUploadError) {
+            <div class="doc-upload-error">{{ docUploadError }}</div>
+          }
+
+          @for (doc of requiredDocuments; track doc.key) {
+            <div class="doc-row">
+              <div class="doc-row-info">
+                <span class="doc-row-label">{{ doc.label }}</span>
+                <span class="doc-req-tag" [class.doc-optional-tag]="!doc.required">{{ doc.required ? 'Obligatorio' : 'Opcional' }}</span>
+              </div>
+
+              @let status = docStatusFor(doc.key);
+              <div class="doc-row-action">
+                @if (status?.status === 'approved') {
+                  <span class="doc-status-pill doc-status-approved">Aprobado</span>
+                } @else if (status?.status === 'rejected') {
+                  <span class="doc-status-pill doc-status-rejected" [title]="status.review_note">Rechazado</span>
+                } @else if (status) {
+                  <span class="doc-status-pill doc-status-pending">En revisión</span>
+                } @else {
+                  <span class="doc-status-pill doc-status-missing">Sin subir</span>
+                }
+
+                <label class="doc-upload-btn" [class.doc-uploading]="uploadingKey === doc.key">
+                  {{ uploadingKey === doc.key ? 'Subiendo...' : (status ? 'Reemplazar' : 'Subir') }}
+                  <input type="file" accept=".jpg,.jpeg,.png,.pdf" hidden
+                         [disabled]="uploadingKey === doc.key"
+                         (change)="onDocumentFileSelected(doc.key, $event)" />
+                </label>
+              </div>
+
+              @if (status?.status === 'rejected' && status?.review_note) {
+                <div class="doc-reject-note">Motivo: {{ status.review_note }}</div>
+              }
+            </div>
+          }
+        </div>
+      }
 
       <!-- BANNER: LLAMANDO AHORA -->
       @if (isCalled) {
         <div class="banner-called">
-          <div class="banner-icon">🔔</div>
+          <div class="banner-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+            </svg>
+          </div>
           <div>
             <div class="banner-title">¡ESTÁN A PUNTO DE LLAMARTE!</div>
             <div class="banner-sub">Es tu turno, espera el llamado</div>
+          </div>
+        </div>
+      }
+
+      <!-- TURNO VIRTUAL: unirse a la videollamada -->
+      @if (isVirtualTurn && isCalled && meetLink) {
+        <div class="meet-call-card">
+          <div class="meet-call-icon">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m22 8-6 4 6 4V8Z"></path>
+              <rect x="2" y="6" width="14" height="12" rx="2"></rect>
+            </svg>
+          </div>
+          <div class="meet-call-text">
+            <div class="meet-call-title">Tu videollamada está lista</div>
+            <div class="meet-call-sub">Únete ahora para que te atiendan</div>
+          </div>
+          <a [href]="meetLink" target="_blank" rel="noopener" class="meet-call-btn">Unirse a la videollamada</a>
+        </div>
+      }
+
+      <!-- TURNO VIRTUAL: chat con el empleado -->
+      @if (isVirtualTurn && isCalled) {
+        <div class="client-chat-card">
+          <div class="client-chat-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+            Chat con quien te atiende
+          </div>
+
+          <div class="client-chat-messages">
+            @for (msg of displayChatMessages; track $index) {
+              <div class="client-chat-msg" [class.client-chat-mine]="msg.isMine">
+                <div class="client-chat-msg-header">
+                  <span>{{ msg.sender_name }}</span>
+                  <span>{{ msg.time }}</span>
+                </div>
+                <div class="client-chat-msg-body">{{ msg.text }}</div>
+              </div>
+            }
+            @if (displayChatMessages.length === 0) {
+              <div class="client-chat-placeholder">Aún no hay mensajes.</div>
+            }
+          </div>
+
+          <div class="client-chat-input-row">
+            <input
+              [(ngModel)]="chatInput"
+              (keyup.enter)="sendChatMessage()"
+              placeholder="Escribe tu mensaje..."
+              [disabled]="sendingChat"
+              class="client-chat-input" />
+            <button (click)="sendChatMessage()" [disabled]="sendingChat" class="client-chat-send">
+              {{ sendingChat ? 'Enviando...' : 'Enviar' }}
+            </button>
           </div>
         </div>
       }
@@ -138,7 +304,12 @@
       <!-- BANNER: PRÓXIMO A PASAR -->
       @if (isNext) {
         <div class="banner-next">
-          <div class="banner-icon">⏱️</div>
+          <div class="banner-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="9"></circle>
+              <polyline points="12 7 12 12 15.5 14"></polyline>
+            </svg>
+          </div>
           <div>
             <div class="banner-title">¡Estás próximo a pasar!</div>
             <div class="banner-sub">Prepárate, te llamarán en breve</div>
@@ -149,7 +320,13 @@
       <!-- BANNER: YA CASI (2 o 1 turno) -->
       @if (isCloseSoon) {
         <div class="banner-warn">
-          <div class="banner-icon">⚠️</div>
+          <div class="banner-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"></path>
+              <line x1="12" y1="9" x2="12" y2="13"></line>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+          </div>
           <div>
             <div class="banner-title">¡Ya casi es tu turno!</div>
             <div class="banner-sub">
@@ -163,7 +340,12 @@
       <!-- Turno completado / cancelado → botón volver -->
       @if (isFinished) {
         <div class="banner-finished">
-          <div class="banner-icon">✅</div>
+          <div class="banner-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="9"></circle>
+              <polyline points="8 12.5 10.8 15.5 16 9.5"></polyline>
+            </svg>
+          </div>
           <div>
             <div class="banner-title">Tu turno fue atendido</div>
             <div class="banner-sub">Gracias por tu visita</div>
@@ -176,7 +358,13 @@
 
       @if (userTurnStatus === 'cancelled') {
         <div class="banner-cancelled">
-          <div class="banner-icon">❌</div>
+          <div class="banner-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="9"></circle>
+              <line x1="9" y1="9" x2="15" y2="15"></line>
+              <line x1="15" y1="9" x2="9" y2="15"></line>
+            </svg>
+          </div>
           <div>
             <div class="banner-title">Turno cancelado</div>
             <div class="banner-sub">Puedes solicitar uno nuevo</div>
@@ -184,6 +372,26 @@
         </div>
         <div class="action-row">
           <button class="get-turn-btn" (click)="goBackToRequest()">Pedir nuevo turno</button>
+        </div>
+      }
+
+      @if (isRescheduled) {
+        <div class="banner-cancelled">
+          <div class="banner-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="23 4 23 10 17 10"></polyline>
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+            </svg>
+          </div>
+          <div>
+            <div class="banner-title">Tu turno fue reagendado</div>
+            @if (userTurnScheduledFor) {
+              <div class="banner-sub">Nueva fecha: {{ userTurnScheduledFor }}</div>
+            }
+          </div>
+        </div>
+        <div class="action-row">
+          <button class="get-turn-btn" (click)="goBackToRequest()">Volver al inicio</button>
         </div>
       }
 
@@ -221,18 +429,18 @@
 
     <div class="filter-section">
       <label class="filter-label">Filtrar por Sede:</label>
-      <select [(ngModel)]="filterSede" class="form-select" style="max-width:220px;">
+      <select [(ngModel)]="filterSedeId" class="form-select" style="max-width:220px;">
         <option value="">Todas las sedes</option>
-        @for (s of sedeOptions; track s) { <option [value]="s">{{ s }}</option> }
+        @for (s of sedeOptions; track s.id) { <option [value]="s.id">{{ s.name }}</option> }
       </select>
     </div>
 
     <div class="waiting-queue">
       <div class="queue-header"><h2 class="queue-title">Turnos en el Sistema</h2></div>
-      @if (turns.length === 0) {
+      @if (filteredTurns.length === 0) {
         <div class="no-turns"><p>No hay turnos registrados</p></div>
       }
-      @for (turn of turns; track $index) {
+      @for (turn of filteredTurns; track $index) {
         <div class="turn-item">
           <div class="turn-info">
             <span class="turn-number-label">{{ turn.number }}</span>
@@ -248,8 +456,8 @@
 
 <!-- ── Chatbot floating bubble (solo cliente) ── -->
 @if (currentUser?.role === 'client' || !currentUser) {
-  <button class="chatbot-bubble" (click)="openChatbotModal()" title="Asistente virtual">
-    <span class="chatbot-bubble-icon">🤖</span>
+  <button class="chatbot-bubble" (click)="openChatbotModal()" title="TURNITY - Asistente virtual">
+    <img class="chatbot-bubble-icon" src="/avatar-ia.jpeg" alt="TURNITY">
     <span class="chatbot-bubble-label">Ayuda</span>
   </button>
 }
@@ -258,17 +466,17 @@
 @if (showChatbotModal) {
   <div class="modal-overlay" (click)="closeChatbotModal()">
     <div class="modal-dialog chatbot-modal-dialog" (click)="$event.stopPropagation()">
-      <div class="modal-icon">🤖</div>
-      <h2 class="modal-title">Asistente Virtual</h2>
+      <div class="modal-icon modal-icon-bot"><img src="/avatar-ia.jpeg" alt="TURNITY"></div>
+      <h2 class="modal-title">TURNITY</h2>
       <p class="modal-hint">
-        Serás redirigido al <strong>Chatbot de Turnify</strong>.<br>
-        Nuestro asistente con IA puede ayudarte a agendar tu turno, responder preguntas frecuentes y orientar a personas de la tercera edad.
+        Serás redirigido a <strong>TURNITY</strong>, tu asistente virtual.<br>
+        Puede ayudarte a agendar tu turno, responder preguntas frecuentes y orientar a personas de la tercera edad.
       </p>
       <div class="chatbot-modal-features">
-        <span class="feature-chip">📋 Agendar turnos</span>
-        <span class="feature-chip">⏱️ Tiempos de espera</span>
-        <span class="feature-chip">👴 Atención preferencial</span>
-        <span class="feature-chip">❓ Preguntas frecuentes</span>
+        <span class="feature-chip">Agendar turnos</span>
+        <span class="feature-chip">Tiempos de espera</span>
+        <span class="feature-chip">Atención preferencial</span>
+        <span class="feature-chip">Preguntas frecuentes</span>
       </div>
       <button class="get-turn-btn chatbot-go-btn" (click)="goToChatbot()">Ir al Chatbot</button>
       <button class="btn-cancel-turn" style="margin-top:0.5rem;width:100%;border-radius:10px;" (click)="closeChatbotModal()">Cancelar</button>
@@ -280,12 +488,17 @@
 @if (showTurnModal) {
   <div class="modal-overlay" (click)="closeModal()">
     <div class="modal-dialog" (click)="$event.stopPropagation()">
-      <div class="modal-icon">🎫</div>
+      <div class="modal-icon">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 10a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v1a2 2 0 0 0 0 4v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1a2 2 0 0 0 0-4Z"></path>
+          <line x1="12" y1="8" x2="12" y2="16" stroke-dasharray="2 2"></line>
+        </svg>
+      </div>
       <h2 class="modal-title">¡Turno Asignado!</h2>
       <p class="modal-hint">Tu número de turno es:</p>
       <div class="modal-turn-num">{{ userTurn }}</div>
       @if (userTurnSede) {
-        <p class="modal-sede">📍 {{ userTurnSede }}</p>
+        <p class="modal-sede">{{ userTurnSede }}</p>
       }
       <p class="modal-hint" style="margin-top:1rem;">Espera cómodamente. Te avisaremos cuando sea tu turno.<br><strong>Recuerda tu número.</strong></p>
       <button class="get-turn-btn" style="margin-top:1rem;" (click)="closeModal()">Entendido</button>

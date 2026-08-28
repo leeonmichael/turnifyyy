@@ -25,22 +25,40 @@
   <div class="action-modal" *ngIf="showActionModal && currentTurn">
     <div class="action-modal-content">
       <h3>Opciones del Turno {{ currentTurn.number }}</h3>
-      <p class="action-subtitle">Selecciona una acción:</p>
-      <div class="action-buttons">
-        <button class="action-btn complete-btn" (click)="finishCurrent()">
-          <span class="action-icon">&#10003;</span>
-          <span>Completar</span>
-        </button>
-        <button class="action-btn reschedule-btn" (click)="rescheduleCurrent()">
-          <span class="action-icon">&#128197;</span>
-          <span>Reagendar</span>
-        </button>
-        <button class="action-btn cancel-btn" (click)="cancelCurrent()">
-          <span class="action-icon">&#10005;</span>
-          <span>Cancelar</span>
-        </button>
+
+      <div *ngIf="!showRescheduleForm">
+        <p class="action-subtitle">Selecciona una acción:</p>
+        <div class="action-buttons">
+          <button class="action-btn complete-btn" (click)="finishCurrent()">
+            <span class="action-icon">&#10003;</span>
+            <span>Completar</span>
+          </button>
+          <button class="action-btn reschedule-btn" (click)="openRescheduleForm()">
+            <span class="action-icon">&#128197;</span>
+            <span>Reagendar</span>
+          </button>
+          <button class="action-btn cancel-btn" (click)="cancelCurrent()">
+            <span class="action-icon">&#10005;</span>
+            <span>Cancelar</span>
+          </button>
+        </div>
+        <button class="close-modal-btn" (click)="closeActionModal()">Cerrar</button>
       </div>
-      <button class="close-modal-btn" (click)="showActionModal = false">Cerrar</button>
+
+      <div *ngIf="showRescheduleForm" class="reschedule-inline-form">
+        <p class="action-subtitle">¿Para qué fecha reagendamos este turno?</p>
+        <input type="date" [(ngModel)]="rescheduleDate" [min]="todayIso" class="date-input" />
+        <div class="action-buttons">
+          <button class="action-btn complete-btn" (click)="confirmReschedule()">
+            <span class="action-icon">&#10003;</span>
+            <span>Confirmar</span>
+          </button>
+          <button class="action-btn cancel-btn" (click)="cancelRescheduleForm()">
+            <span class="action-icon">&#10005;</span>
+            <span>Cancelar</span>
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -70,7 +88,7 @@
   </div>
 
   <div class="sede-badge-section">
-    <span class="sede-badge">📍 Sede: {{ getEmployeeSede() }}</span>
+    <span class="sede-badge">Sede: {{ getEmployeeSede() }}</span>
     <span class="sede-info">Solo ves los turnos de tu sede</span>
   </div>
 
@@ -99,7 +117,14 @@
 
     <div class="all-turns-header">
       <div class="all-turns-title-group">
-        <div class="all-turns-icon">📋</div>
+        <div class="all-turns-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 4h6a1 1 0 0 1 1 1v1a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z"></path>
+            <path d="M8 4H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"></path>
+            <line x1="8" y1="11" x2="16" y2="11"></line>
+            <line x1="8" y1="15" x2="16" y2="15"></line>
+          </svg>
+        </div>
         <div>
           <h2 class="all-turns-title">Todos los Turnos Recientes</h2>
           <p class="all-turns-sub">Últimos {{ turns.slice(0,20).length }} registros del sistema</p>
@@ -110,6 +135,7 @@
         <span class="legend-item"><span class="legend-dot ld-called"></span>Llamando</span>
         <span class="legend-item"><span class="legend-dot ld-finished"></span>Atendido</span>
         <span class="legend-item"><span class="legend-dot ld-cancelled"></span>Cancelado</span>
+        <span class="legend-item"><span class="legend-dot ld-rescheduled"></span>Reagendado</span>
       </div>
     </div>
 
@@ -130,7 +156,8 @@
               [class.row-waiting]="turn.status === 'waiting'"
               [class.row-called]="turn.status === 'called'"
               [class.row-finished]="turn.status === 'finished'"
-              [class.row-cancelled]="turn.status === 'cancelled'">
+              [class.row-cancelled]="turn.status === 'cancelled'"
+              [class.row-rescheduled]="turn.status === 'rescheduled'">
 
             <!-- Número de turno -->
             <td class="td-num">
@@ -138,7 +165,8 @@
                     [class.num-waiting]="turn.status === 'waiting'"
                     [class.num-called]="turn.status === 'called'"
                     [class.num-finished]="turn.status === 'finished'"
-                    [class.num-cancelled]="turn.status === 'cancelled'">
+                    [class.num-cancelled]="turn.status === 'cancelled'"
+                    [class.num-rescheduled]="turn.status === 'rescheduled'">
                 {{ turn.number }}
               </span>
             </td>
@@ -170,12 +198,14 @@
                     [class.status-waiting]="turn.status === 'waiting'"
                     [class.status-calling]="turn.status === 'called'"
                     [class.status-completed]="turn.status === 'finished'"
-                    [class.status-cancelled]="turn.status === 'cancelled'">
+                    [class.status-cancelled]="turn.status === 'cancelled'"
+                    [class.status-rescheduled]="turn.status === 'rescheduled'">
                 <span class="status-dot"></span>
                 {{ turn.status === 'waiting' ? 'En espera' :
                    turn.status === 'called' ? 'Llamando' :
                    turn.status === 'finished' ? 'Atendido' :
-                   turn.status === 'cancelled' ? 'Cancelado' : turn.status }}
+                   turn.status === 'cancelled' ? 'Cancelado' :
+                   turn.status === 'rescheduled' ? 'Reagendado' : turn.status }}
               </span>
             </td>
 
@@ -185,7 +215,7 @@
             <!-- Atendido por -->
             <td class="td-agent">
               @if (turn.called_by) {
-                <span class="agent-chip">👤 {{ turn.called_by }}</span>
+                <span class="agent-chip">{{ turn.called_by }}</span>
               } @else {
                 <span class="no-agent">—</span>
               }
@@ -196,7 +226,12 @@
             <tr>
               <td colspan="6" class="empty-table-row">
                 <div class="empty-table-state">
-                  <div class="empty-table-icon">📭</div>
+                  <div class="empty-table-icon">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="22 12 16 12 14 15 10 15 8 12 2 12"></polyline>
+                      <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z"></path>
+                    </svg>
+                  </div>
                   <p>No hay turnos registrados aún</p>
                 </div>
               </td>

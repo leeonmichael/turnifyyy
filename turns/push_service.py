@@ -62,7 +62,7 @@ def notify_upcoming_turns() -> None:
     by_sede: dict[str, list[tuple[str, dict]]] = {}
     for doc_id, t in entries:
         if t.get('status') == 'waiting':
-            by_sede.setdefault(t.get('sede', ''), []).append((doc_id, t))
+            by_sede.setdefault(t.get('sede_id', ''), []).append((doc_id, t))
 
     for sede, waiting in by_sede.items():
         waiting.sort(key=lambda x: x[1].get('created_at', ''))
