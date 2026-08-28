@@ -27,7 +27,14 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Turnify usa el micrófono para que puedas hablar con el asistente virtual TURNITY."
+        }
+      ],
+      "expo-font"
     ]
   }
 }

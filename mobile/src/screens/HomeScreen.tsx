@@ -16,6 +16,7 @@ import * as turnsApi from '../api/turns';
 import { ActiveTurn, Sede } from '../api/turns';
 import { ApiError } from '../api/client';
 import ScreenHeader from '../components/ScreenHeader';
+import VirtualTurnPanel from '../components/VirtualTurnPanel';
 
 const SERVICE_TYPES: { value: string; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { value: 'general', label: 'General (A)', icon: 'people-outline' },
@@ -142,7 +143,7 @@ export default function HomeScreen({ navigation }: any) {
 
   return (
     <View style={styles.container}>
-      <ScreenHeader title={`Hola, ${(user?.full_name || user?.username || '').split(' ')[0]} 👋`} subtitle="Turnify Pro" />
+      <ScreenHeader title={`Hola, ${(user?.full_name || user?.username || '').split(' ')[0]}`} subtitle="Turnify Pro" />
 
       <ScrollView
         contentContainerStyle={{ padding: 20, paddingBottom: 100 }}
@@ -189,11 +190,15 @@ export default function HomeScreen({ navigation }: any) {
               </View>
             )}
 
-            {activeTurn.status === 'called' && (
+            {activeTurn.status === 'called' && activeTurn.service_type !== 'virtual' && (
               <View style={styles.calledBox}>
                 <Ionicons name="megaphone" size={20} color={colors.success} />
                 <Text style={styles.calledMsg}>¡Dirígete al módulo de atención ahora!</Text>
               </View>
+            )}
+
+            {activeTurn.service_type === 'virtual' && (
+              <VirtualTurnPanel turn={activeTurn} onChanged={loadActiveTurn} />
             )}
 
             {activeTurn.status === 'waiting' && (

@@ -11,6 +11,7 @@ const STATUS_LABEL: Record<string, string> = {
   called: 'Llamado',
   finished: 'Finalizado',
   cancelled: 'Cancelado',
+  rescheduled: 'Reagendado',
 };
 
 const STATUS_COLOR: Record<string, string> = {
@@ -18,6 +19,7 @@ const STATUS_COLOR: Record<string, string> = {
   called: colors.primary,
   finished: colors.success,
   cancelled: colors.danger,
+  rescheduled: colors.primary,
 };
 
 const STATUS_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
@@ -25,6 +27,7 @@ const STATUS_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
   called: 'megaphone-outline',
   finished: 'checkmark-circle-outline',
   cancelled: 'close-circle-outline',
+  rescheduled: 'calendar-outline',
 };
 
 export default function MyTurnsScreen() {
@@ -101,6 +104,12 @@ export default function MyTurnsScreen() {
                 <View style={styles.metaRow}>
                   <Ionicons name="flag-outline" size={13} color={colors.textMuted} />
                   <Text style={styles.meta}>Finalizado: {item.finished_at}</Text>
+                </View>
+              )}
+              {!!item.scheduled_for && (
+                <View style={styles.metaRow}>
+                  <Ionicons name="calendar-outline" size={13} color={colors.textMuted} />
+                  <Text style={styles.meta}>Reagendado para: {item.scheduled_for}</Text>
                 </View>
               )}
             </View>
