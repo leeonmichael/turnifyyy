@@ -1,27 +1,31 @@
-"""Subida de documentos de turnos virtuales a Firebase Storage.
+"""Subida de documentos de turnos virtuales a Supabase Storage.
 
 Mismo patrón try/except -> None que firebase_config.py / ai_assistant.py,
-para que la ausencia de Storage (bucket no activado, credenciales sin
+para que la ausencia de Storage (bucket no creado, credenciales sin
 permiso, etc) nunca tumbe el servidor: los endpoints que lo usan devuelven
 un error controlado en vez de un 500.
 """
-import os
 import uuid
-import urllib.parse
-from .firebase_config import db
 
-try:
-    from firebase_admin import storage
-except Exception:
-    storage = None
+from .firebase_config import db
+from .supabase_config import supabase, SUPABASE_BUCKET
 
 ALLOWED_EXTENSIONS = {'jpg', 'jpeg', 'png', 'pdf'}
 MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024  # 8MB
+CONTENT_TYPES = {
+    'jpg':  'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'png':  'image/png',
+    'pdf':  'application/pdf',
+}
+# El bucket es privado: se sirve por URL firmada de larga duración en vez de
+# una URL pública, para no exponer documentos personales sin control.
+SIGNED_URL_EXPIRES_IN = 60 * 60 * 24 * 365 * 10  # 10 años
 
 
 def upload_virtual_document_file(turn_number: str, document_key: str, django_file):
-    """Sube un archivo a Storage y devuelve (url, error). url es '' si error != ''."""
-    if not db or not storage:
+    """Sube un archivo a Supabase Storage y devuelve (url, error). url es '' si error != ''."""
+    if not db or not supabase:
         return '', 'El almacenamiento de documentos no está disponible en este momento'
 
     ext = (django_file.name.rsplit('.', 1)[-1] if '.' in django_file.name else '').lower()
@@ -30,22 +34,28 @@ def upload_virtual_document_file(turn_number: str, document_key: str, django_fil
     if django_file.size > MAX_FILE_SIZE_BYTES:
         return '', 'El archivo supera el tamaño máximo de 8MB'
 
-    try:
-        bucket = storage.bucket()
-    except Exception:
-        print('[storage_helpers] No se pudo obtener el bucket de Firebase Storage')
-        return '', 'El almacenamiento de documentos no está disponible en este momento'
+    path = f"virtual_turns/{turn_number}/{document_key}/{uuid.uuid4().hex}.{ext}"
+    content_type = django_file.content_type or CONTENT_TYPES.get(ext, 'application/octet-stream')
 
     try:
-        path = f"virtual_turns/{turn_number}/{document_key}/{uuid.uuid4().hex}.{ext}"
-        blob = bucket.blob(path)
-        token = str(uuid.uuid4())
-        blob.metadata = {'firebaseStorageDownloadTokens': token}
-        blob.upload_from_file(django_file, content_type=django_file.content_type)
-        encoded_path = urllib.parse.quote(path, safe='')
-        return f"https://firebasestorage.googleapis.com/v0/b/{bucket.name}/o/{encoded_path}?alt=media&token={token}", ''
+        file_bytes = django_file.read()
+        supabase.storage.from_(SUPABASE_BUCKET).upload(
+            path,
+            file_bytes,
+            {'content-type': content_type, 'upsert': 'false'},
+        )
     except Exception as e:
-        print(f'[storage_helpers] Fallo al subir a Storage (bucket={bucket.name}): {e!r}')
-        if 'bucket does not exist' in str(e).lower() or 'notfound' in type(e).__name__.lower():
+        print(f'[storage_helpers] Fallo al subir a Supabase Storage (bucket={SUPABASE_BUCKET}): {e!r}')
+        if 'bucket not found' in str(e).lower():
             return '', 'El almacenamiento de documentos no está activado todavía. Contacta al administrador'
         return '', 'No se pudo subir el documento, intenta de nuevo'
+
+    try:
+        signed = supabase.storage.from_(SUPABASE_BUCKET).create_signed_url(path, SIGNED_URL_EXPIRES_IN)
+        url = signed.get('signedURL') or signed.get('signedUrl')
+        if not url:
+            raise ValueError(f'respuesta sin signedURL: {signed!r}')
+        return url, ''
+    except Exception as e:
+        print(f'[storage_helpers] Fallo al generar URL firmada (bucket={SUPABASE_BUCKET}): {e!r}')
+        return '', 'El documento se subió pero no se pudo generar el enlace, intenta de nuevo'
