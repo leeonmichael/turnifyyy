@@ -26,6 +26,10 @@ export class Login implements OnInit {
   ngOnInit(): void {
     if (this.auth.isAuthenticated()) {
       this.navigateByRole(this.auth.getCurrentUser());
+      return;
+    }
+    if (history.state?.sessionExpired) {
+      this.error = 'Tu sesión expiró o no es válida. Inicia sesión de nuevo.';
     }
   }
 
