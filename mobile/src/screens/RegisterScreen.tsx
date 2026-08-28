@@ -9,9 +9,12 @@ import {
   Platform,
   ScrollView,
   ActivityIndicator,
+  ImageBackground,
+  Image,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
-import { colors } from '../theme';
+import { colors, shadow } from '../theme';
 import { ApiError } from '../api/client';
 
 const DOCUMENT_TYPES = ['CC', 'CE', 'PA', 'NIT'];
@@ -85,142 +88,190 @@ export default function RegisterScreen({ navigation }: any) {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: colors.gradientEnd }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    <ImageBackground
+      source={require('../../assets/login-bg.jpg')}
+      style={styles.bg}
+      resizeMode="cover"
     >
-      <ScrollView contentContainerStyle={styles.scroll}>
-        <View style={styles.card}>
-          <Text style={styles.brand}>TURNIFY</Text>
-          <Text style={styles.title}>Crear Cuenta</Text>
-          <Text style={styles.subtitle}>Regístrate como cliente en Turnify Pro</Text>
-
-          {!!error && (
-            <View style={styles.errorBox}>
-              <Text style={styles.errorText}>{error}</Text>
-            </View>
-          )}
-
-          <Text style={styles.label}>Nombre Completo</Text>
-          <TextInput style={styles.input} placeholder="Nombre completo" value={fullName} onChangeText={setFullName} />
-
-          <Text style={styles.label}>Tipo de Documento</Text>
-          <View style={styles.chipsRow}>
-            {DOCUMENT_TYPES.map((dt) => (
-              <TouchableOpacity
-                key={dt}
-                style={[styles.chip, documentType === dt && styles.chipActive]}
-                onPress={() => setDocumentType(dt)}
-              >
-                <Text style={[styles.chipText, documentType === dt && styles.chipTextActive]}>{dt}</Text>
-              </TouchableOpacity>
-            ))}
+      <View style={styles.overlay} />
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+          <View style={styles.brandRow}>
+            <Image source={require('../../assets/logo.png')} style={styles.brandLogo} />
+            <Text style={styles.brandTitle}>TURNIFY</Text>
           </View>
 
-          <Text style={styles.label}>Número de Documento</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Mínimo 10 dígitos"
-            keyboardType="number-pad"
-            value={cedula}
-            onChangeText={setCedula}
-          />
+          <View style={styles.card}>
+            <Text style={styles.title}>Crear Cuenta</Text>
+            <Text style={styles.subtitle}>Regístrate como cliente en Turnify Pro</Text>
 
-          <Text style={styles.label}>Teléfono</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Mínimo 10 dígitos"
-            keyboardType="number-pad"
-            value={phone}
-            onChangeText={setPhone}
-          />
+            {!!error && (
+              <View style={styles.errorBox}>
+                <Ionicons name="alert-circle" size={16} color={colors.danger} />
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            )}
 
-          <Text style={styles.label}>Correo Electrónico</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="correo@ejemplo.com"
-            autoCapitalize="none"
-            keyboardType="email-address"
-            value={email}
-            onChangeText={setEmail}
-          />
-
-          <Text style={styles.label}>Nombre de Usuario</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Mínimo 3 caracteres"
-            autoCapitalize="none"
-            value={username}
-            onChangeText={setUsername}
-          />
-
-          <Text style={styles.label}>Contraseña</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Mínimo 12 caracteres"
-            secureTextEntry
-            value={password}
-            onChangeText={setPassword}
-          />
-          <Text style={styles.hint}>Mínimo 12 caracteres, incluye 1 letra, 1 número y 1 símbolo (ej: !@#)</Text>
-
-          <Text style={styles.label}>Confirmar Contraseña</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Repite tu contraseña"
-            secureTextEntry
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-          />
-
-          <TouchableOpacity style={styles.checkboxRow} onPress={() => setAcceptTerms((v) => !v)}>
-            <View style={[styles.checkbox, acceptTerms && styles.checkboxChecked]}>
-              {acceptTerms && <Text style={styles.checkboxMark}>✓</Text>}
+            <Text style={styles.label}>Nombre Completo</Text>
+            <View style={styles.inputRow}>
+              <Ionicons name="person-outline" size={18} color={colors.textMuted} />
+              <TextInput style={styles.input} placeholder="Nombre completo" placeholderTextColor="#9ca3af" value={fullName} onChangeText={setFullName} />
             </View>
-            <Text style={styles.checkboxLabel}>Acepto términos y condiciones</Text>
-          </TouchableOpacity>
 
-          <TouchableOpacity style={styles.button} onPress={onSubmit} disabled={loading}>
-            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>+ Crear Cuenta</Text>}
-          </TouchableOpacity>
+            <Text style={styles.label}>Tipo de Documento</Text>
+            <View style={styles.chipsRow}>
+              {DOCUMENT_TYPES.map((dt) => (
+                <TouchableOpacity
+                  key={dt}
+                  style={[styles.chip, documentType === dt && styles.chipActive]}
+                  onPress={() => setDocumentType(dt)}
+                >
+                  <Text style={[styles.chipText, documentType === dt && styles.chipTextActive]}>{dt}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
 
-          <TouchableOpacity onPress={() => navigation.navigate('Login')} style={{ marginTop: 18 }}>
-            <Text style={styles.link}>
-              ¿Ya tienes cuenta? <Text style={styles.linkStrong}>Inicia Sesión aquí</Text>
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+            <Text style={styles.label}>Número de Documento</Text>
+            <View style={styles.inputRow}>
+              <Ionicons name="card-outline" size={18} color={colors.textMuted} />
+              <TextInput
+                style={styles.input}
+                placeholder="Mínimo 10 dígitos"
+                placeholderTextColor="#9ca3af"
+                keyboardType="number-pad"
+                value={cedula}
+                onChangeText={setCedula}
+              />
+            </View>
+
+            <Text style={styles.label}>Teléfono</Text>
+            <View style={styles.inputRow}>
+              <Ionicons name="call-outline" size={18} color={colors.textMuted} />
+              <TextInput
+                style={styles.input}
+                placeholder="Mínimo 10 dígitos"
+                placeholderTextColor="#9ca3af"
+                keyboardType="number-pad"
+                value={phone}
+                onChangeText={setPhone}
+              />
+            </View>
+
+            <Text style={styles.label}>Correo Electrónico</Text>
+            <View style={styles.inputRow}>
+              <Ionicons name="mail-outline" size={18} color={colors.textMuted} />
+              <TextInput
+                style={styles.input}
+                placeholder="correo@ejemplo.com"
+                placeholderTextColor="#9ca3af"
+                autoCapitalize="none"
+                keyboardType="email-address"
+                value={email}
+                onChangeText={setEmail}
+              />
+            </View>
+
+            <Text style={styles.label}>Nombre de Usuario</Text>
+            <View style={styles.inputRow}>
+              <Ionicons name="at-outline" size={18} color={colors.textMuted} />
+              <TextInput
+                style={styles.input}
+                placeholder="Mínimo 3 caracteres"
+                placeholderTextColor="#9ca3af"
+                autoCapitalize="none"
+                value={username}
+                onChangeText={setUsername}
+              />
+            </View>
+
+            <Text style={styles.label}>Contraseña</Text>
+            <View style={styles.inputRow}>
+              <Ionicons name="lock-closed-outline" size={18} color={colors.textMuted} />
+              <TextInput
+                style={styles.input}
+                placeholder="Mínimo 12 caracteres"
+                placeholderTextColor="#9ca3af"
+                secureTextEntry
+                value={password}
+                onChangeText={setPassword}
+              />
+            </View>
+            <Text style={styles.hint}>Mínimo 12 caracteres, incluye 1 letra, 1 número y 1 símbolo (ej: !@#)</Text>
+
+            <Text style={styles.label}>Confirmar Contraseña</Text>
+            <View style={styles.inputRow}>
+              <Ionicons name="lock-closed-outline" size={18} color={colors.textMuted} />
+              <TextInput
+                style={styles.input}
+                placeholder="Repite tu contraseña"
+                placeholderTextColor="#9ca3af"
+                secureTextEntry
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+              />
+            </View>
+
+            <TouchableOpacity style={styles.checkboxRow} onPress={() => setAcceptTerms((v) => !v)}>
+              <View style={[styles.checkbox, acceptTerms && styles.checkboxChecked]}>
+                {acceptTerms && <Ionicons name="checkmark" size={14} color="#fff" />}
+              </View>
+              <Text style={styles.checkboxLabel}>Acepto términos y condiciones</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.button} onPress={onSubmit} disabled={loading} activeOpacity={0.85}>
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="person-add-outline" size={18} color="#fff" />
+                  <Text style={styles.buttonText}>Crear Cuenta</Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={() => navigation.navigate('Login')} style={{ marginTop: 18 }}>
+              <Text style={styles.link}>
+                ¿Ya tienes cuenta? <Text style={styles.linkStrong}>Inicia Sesión aquí</Text>
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  scroll: { flexGrow: 1, justifyContent: 'center', padding: 20 },
+  bg: { flex: 1, backgroundColor: colors.navy },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(8, 18, 43, 0.6)',
+  },
+  scroll: { flexGrow: 1, justifyContent: 'center', padding: 24, paddingVertical: 40 },
+  brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 20, alignSelf: 'center' },
+  brandLogo: { width: 34, height: 34 },
+  brandTitle: { fontSize: 18, fontWeight: '800', color: colors.textOnDark, letterSpacing: 1 },
   card: {
     backgroundColor: colors.card,
-    borderRadius: 20,
+    borderRadius: 22,
     padding: 28,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 6,
+    ...shadow.floating,
   },
-  brand: { fontSize: 22, fontWeight: '800', color: colors.primary, textAlign: 'center' },
-  title: { fontSize: 24, fontWeight: '800', color: colors.text, textAlign: 'center', marginTop: 8 },
+  title: { fontSize: 24, fontWeight: '800', color: colors.text, textAlign: 'center' },
   subtitle: { fontSize: 14, color: colors.textMuted, textAlign: 'center', marginTop: 4, marginBottom: 16 },
   label: { fontSize: 13, fontWeight: '700', color: colors.text, marginBottom: 6, marginTop: 12 },
   hint: { fontSize: 11, color: colors.textMuted, marginTop: 4 },
-  input: {
-    borderWidth: 1,
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1.5,
     borderColor: colors.border,
-    borderRadius: 10,
+    borderRadius: 12,
     paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
     backgroundColor: colors.background,
+    gap: 10,
   },
+  input: { flex: 1, paddingVertical: 12, fontSize: 15, color: colors.text },
   chipsRow: { flexDirection: 'row', gap: 8 },
   chip: {
     borderWidth: 1,
@@ -244,18 +295,29 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   checkboxChecked: { backgroundColor: colors.primary, borderColor: colors.primary },
-  checkboxMark: { color: '#fff', fontSize: 13, fontWeight: '800' },
   checkboxLabel: { color: colors.text, fontSize: 13 },
   button: {
+    flexDirection: 'row',
+    gap: 8,
     backgroundColor: colors.primary,
-    borderRadius: 10,
-    paddingVertical: 14,
+    borderRadius: 12,
+    paddingVertical: 15,
     alignItems: 'center',
+    justifyContent: 'center',
     marginTop: 24,
+    ...shadow.card,
   },
   buttonText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  link: { textAlign: 'center', color: colors.textMuted },
+  link: { textAlign: 'center', color: colors.textMuted, fontSize: 13 },
   linkStrong: { color: colors.primary, fontWeight: '700' },
-  errorBox: { backgroundColor: colors.dangerBg, borderRadius: 10, padding: 12, marginBottom: 8 },
-  errorText: { color: colors.danger, fontSize: 13 },
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.dangerBg,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 8,
+  },
+  errorText: { color: colors.danger, fontSize: 13, flex: 1 },
 });

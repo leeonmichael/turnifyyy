@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -9,16 +9,18 @@ import {
   RefreshControl,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
-import { colors } from '../theme';
+import { colors, shadow } from '../theme';
 import * as turnsApi from '../api/turns';
 import { ActiveTurn, Sede } from '../api/turns';
 import { ApiError } from '../api/client';
+import ScreenHeader from '../components/ScreenHeader';
 
-const SERVICE_TYPES = [
-  { value: 'general', label: 'General (A)' },
-  { value: 'preferential', label: 'Preferencial (B)' },
-  { value: 'emergency', label: 'Emergencia (E)' },
+const SERVICE_TYPES: { value: string; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { value: 'general', label: 'General (A)', icon: 'people-outline' },
+  { value: 'preferential', label: 'Preferencial (B)', icon: 'heart-outline' },
+  { value: 'emergency', label: 'Emergencia (E)', icon: 'alert-circle-outline' },
 ];
 
 const STATUS_LABEL: Record<string, string> = {
@@ -28,7 +30,7 @@ const STATUS_LABEL: Record<string, string> = {
   cancelled: 'Cancelado',
 };
 
-export default function HomeScreen() {
+export default function HomeScreen({ navigation }: any) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -64,13 +66,10 @@ export default function HomeScreen() {
     try {
       const data = await turnsApi.getSedes();
       setSedes(data.sedes || []);
-      if (data.sedes?.length && !data.sedes.some((s) => s.name === selectedSede)) {
-        setSelectedSede(data.sedes[0].name);
-      }
+      setSelectedSede((prev) => (data.sedes?.length && !data.sedes.some((s) => s.name === prev) ? data.sedes[0].name : prev));
     } catch {
       setSedes([{ id: 'MOSQUERA', name: 'MOSQUERA', city: '', address: '' }]);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useFocusEffect(
@@ -138,126 +137,171 @@ export default function HomeScreen() {
   }
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={{ padding: 20 }}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-    >
-      <Text style={styles.greeting}>Hola, {user?.full_name || user?.username} 👋</Text>
+    <View style={styles.container}>
+      <ScreenHeader title={`Hola, ${(user?.full_name || user?.username || '').split(' ')[0]} 👋`} subtitle="Turnify Pro" />
 
-      {activeTurn ? (
-        <View style={styles.trackingCard}>
-          <Text style={styles.turnNumber}>{activeTurn.number}</Text>
-          <Text
-            style={[
-              styles.statusBadge,
-              activeTurn.status === 'called' && styles.statusBadgeCalled,
-              activeTurn.status === 'waiting' && styles.statusBadgeWaiting,
-            ]}
-          >
-            {STATUS_LABEL[activeTurn.status] || activeTurn.status}
-          </Text>
-          <Text style={styles.turnMeta}>Sede: {activeTurn.sede}</Text>
-
-          {activeTurn.status === 'waiting' && position && (
-            <View style={styles.positionBox}>
-              <Text style={styles.positionNumber}>{position.turns_ahead}</Text>
-              <Text style={styles.positionLabel}>
-                {position.turns_ahead === 0 ? 'Eres el siguiente' : 'turnos antes que el tuyo'}
+      <ScrollView
+        contentContainerStyle={{ padding: 20, paddingBottom: 100 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
+        {activeTurn ? (
+          <View style={styles.trackingCard}>
+            <View style={styles.turnBadge}>
+              <Text style={styles.turnNumber}>{activeTurn.number}</Text>
+            </View>
+            <View
+              style={[
+                styles.statusPill,
+                activeTurn.status === 'called' && styles.statusPillCalled,
+                activeTurn.status === 'waiting' && styles.statusPillWaiting,
+              ]}
+            >
+              <Ionicons
+                name={activeTurn.status === 'called' ? 'megaphone' : 'time-outline'}
+                size={14}
+                color={activeTurn.status === 'called' ? colors.success : colors.warning}
+              />
+              <Text
+                style={[
+                  styles.statusPillText,
+                  activeTurn.status === 'called' && { color: colors.success },
+                  activeTurn.status === 'waiting' && { color: colors.warning },
+                ]}
+              >
+                {STATUS_LABEL[activeTurn.status] || activeTurn.status}
               </Text>
             </View>
-          )}
-
-          {activeTurn.status === 'called' && (
-            <Text style={styles.calledMsg}>¡Dirígete al módulo de atención ahora!</Text>
-          )}
-
-          {activeTurn.status === 'waiting' && (
-            <TouchableOpacity style={styles.cancelButton} onPress={cancelTurn}>
-              <Text style={styles.cancelButtonText}>Cancelar turno</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      ) : (
-        <View style={styles.formCard}>
-          <Text style={styles.formTitle}>Solicitar Turno</Text>
-          {!!error && (
-            <View style={styles.errorBox}>
-              <Text style={styles.errorText}>{error}</Text>
+            <View style={styles.turnMetaRow}>
+              <Ionicons name="location-outline" size={14} color={colors.textMuted} />
+              <Text style={styles.turnMeta}>{activeTurn.sede}</Text>
             </View>
-          )}
 
-          <Text style={styles.label}>Modalidad</Text>
-          <View style={styles.chipsRow}>
-            {(['presencial', 'virtual'] as const).map((mode) => (
-              <TouchableOpacity
-                key={mode}
-                style={[styles.chip, turnMode === mode && styles.chipActive]}
-                onPress={() => setTurnMode(mode)}
-              >
-                <Text style={[styles.chipText, turnMode === mode && styles.chipTextActive]}>
-                  {mode === 'presencial' ? 'Presencial' : 'Virtual'}
+            {activeTurn.status === 'waiting' && position && (
+              <View style={styles.positionBox}>
+                <Text style={styles.positionNumber}>{position.turns_ahead}</Text>
+                <Text style={styles.positionLabel}>
+                  {position.turns_ahead === 0 ? 'Eres el siguiente' : 'turnos antes que el tuyo'}
                 </Text>
+              </View>
+            )}
+
+            {activeTurn.status === 'called' && (
+              <View style={styles.calledBox}>
+                <Ionicons name="megaphone" size={20} color={colors.success} />
+                <Text style={styles.calledMsg}>¡Dirígete al módulo de atención ahora!</Text>
+              </View>
+            )}
+
+            {activeTurn.status === 'waiting' && (
+              <TouchableOpacity style={styles.cancelButton} onPress={cancelTurn} activeOpacity={0.8}>
+                <Ionicons name="close-circle-outline" size={16} color={colors.danger} />
+                <Text style={styles.cancelButtonText}>Cancelar turno</Text>
               </TouchableOpacity>
-            ))}
+            )}
           </View>
-
-          {turnMode === 'presencial' && (
-            <>
-              <Text style={styles.label}>Tipo de Servicio</Text>
-              <View style={styles.chipsColumn}>
-                {SERVICE_TYPES.map((s) => (
-                  <TouchableOpacity
-                    key={s.value}
-                    style={[styles.chip, serviceType === s.value && styles.chipActive]}
-                    onPress={() => setServiceType(s.value)}
-                  >
-                    <Text style={[styles.chipText, serviceType === s.value && styles.chipTextActive]}>
-                      {s.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+        ) : (
+          <View style={styles.formCard}>
+            <Text style={styles.formTitle}>Solicitar Turno</Text>
+            {!!error && (
+              <View style={styles.errorBox}>
+                <Ionicons name="alert-circle" size={16} color={colors.danger} />
+                <Text style={styles.errorText}>{error}</Text>
               </View>
+            )}
 
-              <Text style={styles.label}>Sede</Text>
-              <View style={styles.chipsColumn}>
-                {sedes.map((s) => (
-                  <TouchableOpacity
-                    key={s.id}
-                    style={[styles.chip, selectedSede === s.name && styles.chipActive]}
-                    onPress={() => setSelectedSede(s.name)}
-                  >
-                    <Text style={[styles.chipText, selectedSede === s.name && styles.chipTextActive]}>
-                      {s.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </>
-          )}
+            <Text style={styles.label}>Modalidad</Text>
+            <View style={styles.chipsRow}>
+              {(['presencial', 'virtual'] as const).map((mode) => (
+                <TouchableOpacity
+                  key={mode}
+                  style={[styles.chip, turnMode === mode && styles.chipActive]}
+                  onPress={() => setTurnMode(mode)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons
+                    name={mode === 'presencial' ? 'business-outline' : 'videocam-outline'}
+                    size={15}
+                    color={turnMode === mode ? '#fff' : colors.textMuted}
+                  />
+                  <Text style={[styles.chipText, turnMode === mode && styles.chipTextActive]}>
+                    {mode === 'presencial' ? 'Presencial' : 'Virtual'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
 
-          <TouchableOpacity style={styles.button} onPress={requestTurn} disabled={requesting}>
-            {requesting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Pedir Turno</Text>}
-          </TouchableOpacity>
-        </View>
-      )}
-    </ScrollView>
+            {turnMode === 'presencial' && (
+              <>
+                <Text style={styles.label}>Tipo de Servicio</Text>
+                <View style={styles.chipsColumn}>
+                  {SERVICE_TYPES.map((s) => (
+                    <TouchableOpacity
+                      key={s.value}
+                      style={[styles.optionRow, serviceType === s.value && styles.optionRowActive]}
+                      onPress={() => setServiceType(s.value)}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name={s.icon} size={18} color={serviceType === s.value ? colors.primary : colors.textMuted} />
+                      <Text style={[styles.optionText, serviceType === s.value && styles.optionTextActive]}>{s.label}</Text>
+                      {serviceType === s.value && <Ionicons name="checkmark-circle" size={18} color={colors.primary} style={{ marginLeft: 'auto' }} />}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <Text style={styles.label}>Sede</Text>
+                <View style={styles.chipsColumn}>
+                  {sedes.map((s) => (
+                    <TouchableOpacity
+                      key={s.id}
+                      style={[styles.optionRow, selectedSede === s.name && styles.optionRowActive]}
+                      onPress={() => setSelectedSede(s.name)}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="location-outline" size={18} color={selectedSede === s.name ? colors.primary : colors.textMuted} />
+                      <Text style={[styles.optionText, selectedSede === s.name && styles.optionTextActive]}>{s.name}</Text>
+                      {selectedSede === s.name && <Ionicons name="checkmark-circle" size={18} color={colors.primary} style={{ marginLeft: 'auto' }} />}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </>
+            )}
+
+            <TouchableOpacity style={styles.button} onPress={requestTurn} disabled={requesting} activeOpacity={0.85}>
+              {requesting ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="ticket-outline" size={18} color="#fff" />
+                  <Text style={styles.buttonText}>Pedir Turno</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+      </ScrollView>
+
+      <TouchableOpacity style={styles.fab} onPress={() => navigation.navigate('Chatbot')} activeOpacity={0.85}>
+        <Ionicons name="chatbubble-ellipses" size={26} color="#fff" />
+      </TouchableOpacity>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
-  greeting: { fontSize: 20, fontWeight: '800', color: colors.text, marginBottom: 16 },
-  formCard: { backgroundColor: colors.card, borderRadius: 16, padding: 20 },
+  formCard: { backgroundColor: colors.card, borderRadius: 18, padding: 20, ...shadow.card },
   formTitle: { fontSize: 18, fontWeight: '800', color: colors.text, marginBottom: 12 },
   label: { fontSize: 13, fontWeight: '700', color: colors.text, marginTop: 14, marginBottom: 8 },
   chipsRow: { flexDirection: 'row', gap: 8 },
   chipsColumn: { gap: 8 },
   chip: {
-    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1.5,
     borderColor: colors.border,
-    borderRadius: 8,
+    borderRadius: 10,
     paddingVertical: 10,
     paddingHorizontal: 14,
     backgroundColor: colors.background,
@@ -265,49 +309,104 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   chipText: { color: colors.text, fontWeight: '600', fontSize: 13 },
   chipTextActive: { color: '#fff' },
-  button: {
-    backgroundColor: colors.primary,
-    borderRadius: 10,
-    paddingVertical: 14,
+  optionRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    backgroundColor: colors.background,
+  },
+  optionRowActive: { borderColor: colors.primary, backgroundColor: '#eff6ff' },
+  optionText: { color: colors.text, fontWeight: '600', fontSize: 14 },
+  optionTextActive: { color: colors.primary },
+  button: {
+    flexDirection: 'row',
+    gap: 8,
+    backgroundColor: colors.primary,
+    borderRadius: 12,
+    paddingVertical: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginTop: 24,
+    ...shadow.card,
   },
   buttonText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  errorBox: { backgroundColor: colors.dangerBg, borderRadius: 10, padding: 12, marginBottom: 8 },
-  errorText: { color: colors.danger, fontSize: 13 },
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.dangerBg,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 8,
+  },
+  errorText: { color: colors.danger, fontSize: 13, flex: 1 },
 
   trackingCard: {
     backgroundColor: colors.card,
-    borderRadius: 16,
-    padding: 24,
-    alignItems: 'center',
-  },
-  turnNumber: { fontSize: 48, fontWeight: '900', color: colors.primary, letterSpacing: 2 },
-  statusBadge: {
-    marginTop: 8,
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.textMuted,
-    backgroundColor: colors.background,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
     borderRadius: 20,
-    overflow: 'hidden',
+    padding: 26,
+    alignItems: 'center',
+    ...shadow.card,
   },
-  statusBadgeWaiting: { color: colors.warning, backgroundColor: '#fffbeb' },
-  statusBadgeCalled: { color: colors.success, backgroundColor: colors.successBg },
-  turnMeta: { marginTop: 10, color: colors.textMuted, fontSize: 13 },
-  positionBox: { marginTop: 20, alignItems: 'center' },
-  positionNumber: { fontSize: 40, fontWeight: '800', color: colors.text },
+  turnBadge: {
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    backgroundColor: '#eff6ff',
+    borderWidth: 3,
+    borderColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  turnNumber: { fontSize: 34, fontWeight: '900', color: colors.primary, letterSpacing: 1 },
+  statusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 16,
+    backgroundColor: colors.background,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  statusPillWaiting: { backgroundColor: '#fffbeb' },
+  statusPillCalled: { backgroundColor: colors.successBg },
+  statusPillText: { fontSize: 13, fontWeight: '700', color: colors.textMuted },
+  turnMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 12 },
+  turnMeta: { color: colors.textMuted, fontSize: 13 },
+  positionBox: { marginTop: 22, alignItems: 'center' },
+  positionNumber: { fontSize: 44, fontWeight: '800', color: colors.text },
   positionLabel: { color: colors.textMuted, fontSize: 13, marginTop: 4 },
-  calledMsg: { marginTop: 20, color: colors.success, fontWeight: '700', textAlign: 'center' },
+  calledBox: { marginTop: 22, alignItems: 'center', gap: 8 },
+  calledMsg: { color: colors.success, fontWeight: '700', textAlign: 'center', fontSize: 14 },
   cancelButton: {
-    marginTop: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 26,
     borderWidth: 1.5,
     borderColor: colors.danger,
-    borderRadius: 10,
+    borderRadius: 12,
     paddingVertical: 12,
     paddingHorizontal: 24,
   },
   cancelButtonText: { color: colors.danger, fontWeight: '700' },
+
+  fab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 24,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadow.floating,
+  },
 });

@@ -34,7 +34,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     (async () => {
       const token = await getToken();
       const storedUser = await getStoredUser();
-      if (token && storedUser) {
+      if (token && storedUser && storedUser.role === 'client') {
         setUser(storedUser);
         // Valida en segundo plano que el token siga vigente
         authApi.verifySession().then((res) => {
@@ -43,6 +43,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setUser(null);
           }
         }).catch(() => {});
+      } else if (token) {
+        // Sesión de un rol no permitido en la app móvil (empleado/admin) — se descarta.
+        await clearSession();
       }
       setInitializing(false);
     })();
@@ -61,6 +64,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback(async (username: string, password: string) => {
     const data = await authApi.login(username, password);
+    if (data.user?.role !== 'client') {
+      throw new Error(
+        'Esta aplicación es solo para clientes. Los empleados y administradores deben ingresar desde la versión web.'
+      );
+    }
     await saveSession(data.token, data.user);
     setUser(data.user);
   }, []);
