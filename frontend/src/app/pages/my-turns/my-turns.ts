@@ -70,7 +70,14 @@ export class MyTurns implements OnInit, OnDestroy {
     });
   }
 
-  getStatusLabel(status: string): string {
+  // Un turno reagendado se guarda como 'waiting', pero al cliente hay que
+  // mostrárselo como "Reagendado" para que no lo confunda con la cola de hoy.
+  private isRescheduled(turn: any): boolean {
+    return !!turn?.scheduled_for && turn?.status === 'waiting';
+  }
+
+  getStatusLabel(turn: any): string {
+    if (this.isRescheduled(turn)) return 'Reagendado';
     const labels: { [key: string]: string } = {
       waiting: 'En espera',
       called: 'Llamando',
@@ -78,10 +85,11 @@ export class MyTurns implements OnInit, OnDestroy {
       cancelled: 'Cancelado',
       rescheduled: 'Reagendado'
     };
-    return labels[status] || status;
+    return labels[turn?.status] || turn?.status || '';
   }
 
-  getStatusClass(status: string): string {
+  getStatusClass(turn: any): string {
+    if (this.isRescheduled(turn)) return 'status-rescheduled';
     const classes: { [key: string]: string } = {
       waiting: 'status-waiting',
       called: 'status-calling',
@@ -89,7 +97,7 @@ export class MyTurns implements OnInit, OnDestroy {
       cancelled: 'status-cancelled',
       rescheduled: 'status-rescheduled'
     };
-    return classes[status] || '';
+    return classes[turn?.status] || '';
   }
 
   getServiceLabel(type: string): string {

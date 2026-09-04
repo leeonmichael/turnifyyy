@@ -101,6 +101,7 @@
       <div class="turn-hero"
            [class.turn-hero-warn]="isCloseSoon || isNext"
            [class.turn-hero-called]="isCalled"
+           [class.turn-hero-rescheduled]="isRescheduled"
            [class.turn-hero-done]="isFinished || userTurnStatus === 'cancelled'">
         <div class="turn-hero-label">TU TURNO</div>
         <div class="turn-hero-number">{{ userTurn }}</div>
@@ -109,16 +110,39 @@
         }
         <!-- Status chip -->
         <div class="turn-status-chip"
-             [class.chip-waiting]="userTurnStatus === 'waiting' || userTurnStatus === ''"
+             [class.chip-waiting]="!isRescheduled && (userTurnStatus === 'waiting' || userTurnStatus === '')"
+             [class.chip-rescheduled]="isRescheduled"
              [class.chip-called]="isCalled"
              [class.chip-done]="isFinished"
              [class.chip-cancelled]="userTurnStatus === 'cancelled'">
-          @if (userTurnStatus === 'waiting' || userTurnStatus === '') { En espera }
+          @if (isRescheduled)                                          { Reagendado }
+          @if (!isRescheduled && (userTurnStatus === 'waiting' || userTurnStatus === '')) { En espera }
           @if (isCalled)                                              { Llamando }
           @if (isFinished)                                            { Atendido }
           @if (userTurnStatus === 'cancelled')                        { Cancelado }
         </div>
       </div>
+
+      <!-- Aviso de reagendamiento hecho por el empleado -->
+      @if (userTurnScheduledFor && !isFinished && userTurnStatus !== 'cancelled') {
+        <div class="rescheduled-card">
+          <div class="rescheduled-card-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="18" rx="2"></rect>
+              <line x1="16" y1="2" x2="16" y2="6"></line>
+              <line x1="8" y1="2" x2="8" y2="6"></line>
+              <line x1="3" y1="10" x2="21" y2="10"></line>
+            </svg>
+          </div>
+          <div class="rescheduled-card-body">
+            <div class="rescheduled-card-title">Tu turno fue reagendado</div>
+            <div class="rescheduled-card-date">Nueva fecha: <strong>{{ userTurnScheduledFor }}</strong></div>
+            <div class="rescheduled-card-note">
+              No puedes pedir otro turno mientras este siga pendiente. Si lo cancelas, se generará una multa para tu próxima cita.
+            </div>
+          </div>
+        </div>
+      }
 
       <!-- TURNO VIRTUAL: documentos requeridos -->
       @if (isVirtualTurn && requiredDocuments.length > 0 && !isFinished && userTurnStatus !== 'cancelled') {
@@ -213,7 +237,7 @@
             Chat con quien te atiende
           </div>
 
-          <div class="client-chat-messages">
+          <div class="client-chat-messages" #chatMessages>
             @for (msg of displayChatMessages; track $index) {
               <div class="client-chat-msg" [class.client-chat-mine]="msg.isMine">
                 <div class="client-chat-msg-header">
@@ -232,8 +256,8 @@
             <input
               [(ngModel)]="chatInput"
               (keyup.enter)="sendChatMessage()"
-              placeholder="Escribe tu mensaje (mínimo 50 caracteres)..."
-              minlength="50"
+              placeholder="Escribe tu mensaje (máximo 150 caracteres)..."
+              maxlength="150"
               [disabled]="sendingChat"
               class="client-chat-input" />
             <button (click)="sendChatMessage()" [disabled]="sendingChat" class="client-chat-send">
@@ -243,8 +267,9 @@
         </div>
       }
 
-      <!-- Posición en cola: siempre visible mientras está en espera -->
-      @if (userTurnStatus === 'waiting' || userTurnStatus === '') {
+      <!-- Posición en cola: solo si espera en la cola de hoy. Un turno
+           reagendado es para otro día, así que no tiene posición. -->
+      @if (!isRescheduled && (userTurnStatus === 'waiting' || userTurnStatus === '')) {
         <div class="position-card"
              [class.position-urgent]="isNext || isCloseSoon">
           <div class="position-label">POSICIÓN EN LA COLA</div>

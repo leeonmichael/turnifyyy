@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, AfterViewChecked, ElementRef, ViewChild, ChangeDetectorRef } from '@angular/core';
 import { Router } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
 import { TurnService } from '../../services/turn.service';
@@ -19,7 +19,9 @@ type View = 'request' | 'tracking';
   templateUrl: './home.html',
   styleUrl: './home.css'
 })
-export class Home implements OnInit, OnDestroy {
+export class Home implements OnInit, OnDestroy, AfterViewChecked {
+  @ViewChild('chatMessages') private chatMessagesEl!: ElementRef;
+
   // ---- Form state ----
   serviceType = 'general';
   selectedSedeId = '';
@@ -37,6 +39,7 @@ export class Home implements OnInit, OnDestroy {
 
   // ---- Active turn ----
   userTurn: string | null = null;
+  userTurnId = '';
   userTurnSede = '';
   userTurnSedeId = '';
   userTurnStatus = '';        // 'waiting' | 'called' | 'finished' | 'cancelled'
@@ -95,14 +98,17 @@ export class Home implements OnInit, OnDestroy {
   private httpPollInterval: any;
 
   // ---- Computed getters ----
+  // Un turno reagendado sigue en 'waiting', pero es para otro día: no aplica
+  // la lógica de cola (posición, "ya casi pasas", alarmas).
+  get isRescheduled(): boolean { return !!this.userTurnScheduledFor && this.userTurnStatus === 'waiting'; }
   get isCalled(): boolean    { return this.userTurnStatus === 'called'; }
-  get isNext(): boolean      { return this.userTurnStatus === 'waiting' && this.turnsAhead === 0 && this.positionNum === 1; }
-  get isCloseSoon(): boolean { return this.userTurnStatus === 'waiting' && this.turnsAhead > 0 && this.turnsAhead <= 2; }
-  get isWaitingFar(): boolean{ return this.userTurnStatus === 'waiting' && this.turnsAhead > 2; }
+  get isNext(): boolean      { return !this.isRescheduled && this.userTurnStatus === 'waiting' && this.turnsAhead === 0 && this.positionNum === 1; }
+  get isCloseSoon(): boolean { return !this.isRescheduled && this.userTurnStatus === 'waiting' && this.turnsAhead > 0 && this.turnsAhead <= 2; }
+  get isWaitingFar(): boolean{ return !this.isRescheduled && this.userTurnStatus === 'waiting' && this.turnsAhead > 2; }
   get isFinished(): boolean  { return this.userTurnStatus === 'finished'; }
 
   get waitingCount(): number {
-    const base = this.turns.filter((t: any) => t.status === 'waiting');
+    const base = this.turns.filter((t: any) => t.status === 'waiting' && !t.scheduled_for_later);
     return this.filterSedeId ? base.filter((t: any) => t.sede_id === this.filterSedeId).length : base.length;
   }
   get callingCount(): number {
@@ -263,6 +269,7 @@ export class Home implements OnInit, OnDestroy {
     }
 
     this.turnConfirmed  = true;
+    this.userTurnId     = mine.id || this.userTurnId;
     this.userTurnStatus = mine.status;
     // Keep sede in sync with what the server says
     if (mine.sede) this.userTurnSede = mine.sede;
@@ -295,20 +302,27 @@ export class Home implements OnInit, OnDestroy {
     const effectiveSedeId = mine.sede_id || sedeId;
 
     const waiting = allTurns
-      .filter((t: any) => t.status === 'waiting' && (!effectiveSedeId || t.sede_id === effectiveSedeId))
+      .filter((t: any) => t.status === 'waiting' && !t.scheduled_for_later && (!effectiveSedeId || t.sede_id === effectiveSedeId))
       .sort((a: any, b: any) => (a.created_at || '').localeCompare(b.created_at || ''));
 
     let idx = waiting.findIndex((t: any) => t.number === this.userTurn);
     // If not found with sede filter, try without (safety fallback)
     if (idx === -1) {
       const allWaiting = allTurns
-        .filter((t: any) => t.status === 'waiting')
+        .filter((t: any) => t.status === 'waiting' && !t.scheduled_for_later)
         .sort((a: any, b: any) => (a.created_at || '').localeCompare(b.created_at || ''));
       idx = allWaiting.findIndex((t: any) => t.number === this.userTurn);
     }
 
     this.positionNum = idx >= 0 ? idx + 1 : 0;
     this.turnsAhead  = idx >= 0 ? idx : 0;
+
+    // Un turno reagendado es para otro día: no debe sonar la alarma de
+    // "ya casi pasas" ni dispararse el aviso del asistente.
+    if (this.isRescheduled) {
+      this.warnAlarmPlayed = false;
+      return;
+    }
 
     if (this.positionNum > 0 && this.turnsAhead <= 2) {
       if (!this.warnAlarmPlayed) {
@@ -484,25 +498,39 @@ export class Home implements OnInit, OnDestroy {
     });
   }
 
+  ngAfterViewChecked(): void {
+    this.scrollChatToBottom();
+  }
+
+  private scrollChatToBottom(): void {
+    try {
+      const el = this.chatMessagesEl.nativeElement;
+      el.scrollTop = el.scrollHeight;
+    } catch (_) {}
+  }
+
   sendChatMessage(): void {
     const text = this.chatInput.trim();
     if (!text || !this.userTurn || this.sendingChat) return;
-    if (text.length < 50) {
-      alert('El mensaje debe tener mínimo 50 caracteres');
+    if (text.length > 150) {
+      alert('El mensaje debe tener máximo 150 caracteres');
       return;
     }
     this.sendingChat = true;
-    this.turn.sendVirtualChatMessage(this.userTurn, text).subscribe({
+    this.turn.sendVirtualChatMessage(this.userTurn, text, this.userTurnId).subscribe({
       next: (data: any) => {
         this.sendingChat = false;
         if (data.success) {
           this.chatMessages = data.chat_messages || this.chatMessages;
           this.chatInput = '';
+        } else {
+          alert(data.message || 'No se pudo enviar el mensaje. Intenta de nuevo.');
         }
         this.cdr.detectChanges();
       },
-      error: () => {
+      error: (err: any) => {
         this.sendingChat = false;
+        alert(err?.error?.message || 'No se pudo enviar el mensaje. Intenta de nuevo.');
         this.cdr.detectChanges();
       }
     });

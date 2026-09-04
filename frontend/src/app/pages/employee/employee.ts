@@ -106,18 +106,24 @@ export class Employee implements OnInit, OnDestroy {
     return this.currentUser?.sede_id || '';
   }
 
+  // Los turnos reagendados para otro día no pertenecen a la cola de hoy:
+  // el backend los marca con scheduled_for_later.
+  private inTodaysQueue(t: any): boolean {
+    return t.status === 'waiting' && !t.scheduled_for_later;
+  }
+
   refreshTurnViews(): void {
     const sedeId = this.mySedeId;
     const myTurns = sedeId ? this.turns.filter((t: any) => t.sede_id === sedeId) : this.turns;
 
     this.waitingTurns = myTurns
-      .filter((t: any) => t.status === 'waiting')
+      .filter((t: any) => this.inTodaysQueue(t))
       .slice(0, 10);
 
     this.currentTurn = myTurns.find((t: any) => t.status === 'called') || null;
 
     this.stats = {
-      waiting: myTurns.filter((t: any) => t.status === 'waiting').length,
+      waiting: myTurns.filter((t: any) => this.inTodaysQueue(t)).length,
       totalToday: myTurns.length,
       processed: myTurns.filter((t: any) => t.status === 'finished').length
     };
@@ -172,7 +178,7 @@ export class Employee implements OnInit, OnDestroy {
         this.cdr.detectChanges();
         this.router.navigate(['/reschedule-turns']);
       },
-      error: () => alert('Error al reagendar turno')
+      error: (err: any) => alert(err?.error?.message || 'Error al reagendar turno')
     });
   }
 

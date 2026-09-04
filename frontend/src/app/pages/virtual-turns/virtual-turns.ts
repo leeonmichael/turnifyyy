@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, AfterViewChecked, ElementRef, ViewChild, ChangeDetectorRef } from '@angular/core';
 import { Router } from '@angular/router';
 import { TurnService } from '../../services/turn.service';
 import { AuthService } from '../../services/auth.service';
@@ -16,7 +16,9 @@ import { Subject } from 'rxjs';
   templateUrl: './virtual-turns.html',
   styleUrl: './virtual-turns.css'
 })
-export class VirtualTurns implements OnInit, OnDestroy {
+export class VirtualTurns implements OnInit, OnDestroy, AfterViewChecked {
+  @ViewChild('chatMessages') private chatMessagesEl!: ElementRef;
+
   turns: any[] = [];
   filteredTurns: any[] = [];
   loading = false;
@@ -128,7 +130,7 @@ export class VirtualTurns implements OnInit, OnDestroy {
   }
 
   applyFilters(): void {
-    this.filteredTurns = this.turns.filter((t: any) => t.status === 'waiting' || t.status === 'called');
+    this.filteredTurns = this.turns.filter((t: any) => (t.status === 'waiting' && !t.scheduled_for_later) || t.status === 'called');
   }
 
   // ¿Ya subió todos los documentos obligatorios? (para el badge de la tabla)
@@ -196,6 +198,17 @@ export class VirtualTurns implements OnInit, OnDestroy {
     });
   }
 
+  ngAfterViewChecked(): void {
+    this.scrollToBottom();
+  }
+
+  private scrollToBottom(): void {
+    try {
+      const el = this.chatMessagesEl.nativeElement;
+      el.scrollTop = el.scrollHeight;
+    } catch (_) {}
+  }
+
   resumeVirtual(turn: any): void {
     this.activeVirtualTurn = turn;
     if (this.systemMessages.length === 0) {
@@ -207,12 +220,12 @@ export class VirtualTurns implements OnInit, OnDestroy {
   sendMessage(): void {
     const text = this.newMessage.trim();
     if (!text || !this.activeVirtualTurn || this.sendingMessage) return;
-    if (text.length < 50) {
-      alert('El mensaje debe tener mínimo 50 caracteres');
+    if (text.length > 150) {
+      alert('El mensaje debe tener máximo 150 caracteres');
       return;
     }
     this.sendingMessage = true;
-    this.turn.sendVirtualChatMessage(this.activeVirtualTurn.number, text).subscribe({
+    this.turn.sendVirtualChatMessage(this.activeVirtualTurn.number, text, this.activeVirtualTurn.id || '').subscribe({
       next: (data: any) => {
         this.sendingMessage = false;
         if (data.success) {
@@ -223,9 +236,9 @@ export class VirtualTurns implements OnInit, OnDestroy {
         }
         this.cdr.detectChanges();
       },
-      error: () => {
+      error: (err: any) => {
         this.sendingMessage = false;
-        alert('No se pudo enviar el mensaje');
+        alert(err?.error?.message || 'No se pudo enviar el mensaje. Intenta de nuevo.');
         this.cdr.detectChanges();
       }
     });
@@ -277,7 +290,7 @@ export class VirtualTurns implements OnInit, OnDestroy {
           this.cdr.detectChanges();
         }, 1500);
       },
-      error: () => alert('Error al reagendar turno')
+      error: (err: any) => alert(err?.error?.message || 'Error al reagendar turno')
     });
   }
 

@@ -1,6 +1,25 @@
 <div class="manage-users-container fade-in-up">
   <div class="users-card">
-    <h1>Gestion de Usuarios</h1>
+    <div class="users-header">
+      <h1>Gestion de Usuarios</h1>
+      <span class="users-count" *ngIf="!loading">{{ filteredUsers.length }} de {{ users.length }}</span>
+    </div>
+
+    <!-- Buscar por nombre o cédula -->
+    <div class="users-search-bar">
+      <select [(ngModel)]="searchField" (ngModelChange)="applySearch()" name="searchField" class="users-search-select">
+        <option value="full_name">Nombre</option>
+        <option value="cedula">Cédula</option>
+      </select>
+      <input type="text"
+             [(ngModel)]="searchTerm"
+             (ngModelChange)="applySearch()"
+             name="searchTerm"
+             class="users-search-input"
+             [placeholder]="searchField === 'cedula' ? 'Escribe la cédula...' : 'Escribe el nombre...'" />
+      <button class="users-search-clear" (click)="clearSearch()" *ngIf="searchTerm">Limpiar</button>
+      <button class="users-search-reload" (click)="loadUsers()">Actualizar</button>
+    </div>
 
     <div *ngIf="loading" class="loading-state">Cargando usuarios...</div>
     <div *ngIf="!loading && errorMessage" class="error-state" style="color:#e74c3c;padding:1rem;">
@@ -8,7 +27,7 @@
       <button (click)="loadUsers()" style="margin-left:1rem;" class="btn btn-sm btn-warning">Reintentar</button>
     </div>
 
-    <table *ngIf="!loading && users.length > 0" class="users-table">
+    <table *ngIf="!loading && filteredUsers.length > 0" class="users-table">
       <thead>
         <tr>
           <th>Usuario</th>
@@ -22,7 +41,7 @@
         </tr>
       </thead>
       <tbody>
-        <tr *ngFor="let user of users">
+        <tr *ngFor="let user of filteredUsers; trackBy: trackByUsername">
           <td>{{ user.username }}</td>
           <td>{{ user.full_name || '-' }}</td>
           <td>{{ user.role }}</td>
@@ -48,8 +67,8 @@
       </tbody>
     </table>
 
-    <div *ngIf="!loading && users.length === 0" class="empty-state">
-      No hay usuarios registrados
+    <div *ngIf="!loading && filteredUsers.length === 0" class="empty-state">
+      {{ searchTerm ? 'No se encontraron usuarios con ese dato' : 'No hay usuarios registrados' }}
     </div>
   </div>
 </div>

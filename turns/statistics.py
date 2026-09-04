@@ -1,5 +1,7 @@
 from datetime import date, timedelta
 
+from .fs_helpers import is_in_todays_queue
+
 
 def get_turn_statistics():
     from .firebase_config import db
@@ -27,7 +29,7 @@ def get_turn_statistics():
 
     return {
         'total':          len(all_turns),
-        'waiting':        sum(1 for t in all_turns if t.get('status') == 'waiting'),
+        'waiting':        sum(1 for t in all_turns if is_in_todays_queue(t)),
         'calling':        sum(1 for t in all_turns if t.get('status') == 'called'),
         'today_turns':    len(today_turns),
         'completed':      sum(1 for t in all_turns if t.get('status') == 'finished'),

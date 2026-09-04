@@ -276,7 +276,7 @@
 .status-calling    { background: #fee2e2; color: #dc2626; }
 .status-completed  { background: #d1fae5; color: #059669; }
 .status-cancelled  { background: #f1f5f9; color: #94a3b8; }
-.status-rescheduled { background: #dbeafe; color: #1d4ed8; }
+.status-rescheduled { background: #ede9fe; color: #6d28d9; }
 
 /* Actions column */
 .turn-actions-col {

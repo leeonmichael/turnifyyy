@@ -45,7 +45,8 @@ export default function RegisterScreen({ navigation }: any) {
     if (!fullName) return 'El nombre completo es requerido';
     if (!cedula) return 'El número de documento es requerido';
     if (!/^\d+$/.test(cedula)) return 'El documento debe contener solo números';
-    if (cedula.length < 10) return 'El documento debe tener mínimo 10 dígitos';
+    if (cedula.length < 5) return 'El documento debe tener mínimo 5 dígitos';
+    if (cedula.length > 11) return 'El documento debe tener máximo 11 dígitos';
     if (!email) return 'El correo electrónico es requerido';
     if (!EMAIL_PATTERN.test(email)) return 'Ingrese un correo electrónico válido';
     if (!phone) return 'El teléfono es requerido';
@@ -120,8 +121,9 @@ export default function RegisterScreen({ navigation }: any) {
           <Text style={styles.label}>Número de Documento</Text>
           <TextInput
             style={styles.input}
-            placeholder="Mínimo 10 dígitos"
+            placeholder="Entre 5 y 11 dígitos"
             keyboardType="number-pad"
+            maxLength={11}
             value={cedula}
             onChangeText={setCedula}
           />

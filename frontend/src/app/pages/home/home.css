@@ -144,6 +144,12 @@
   background: linear-gradient(135deg, #64748b, #475569);
   box-shadow: 0 8px 24px rgba(100,116,139,0.25);
 }
+/* Reagendado: morado, para que no se confunda con el naranja de "en espera". */
+.turn-hero-rescheduled {
+  background: linear-gradient(135deg, #8b5cf6, #6d28d9);
+  box-shadow: 0 8px 32px rgba(139,92,246,0.35);
+  animation: none;
+}
 
 .turn-hero-label  { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.14em; color: rgba(255,255,255,0.8); text-transform: uppercase; margin-bottom: 0.35rem; }
 .turn-hero-number { font-size: 5.5rem; font-weight: 900; color: white; font-family: 'Inter', monospace; line-height: 1; letter-spacing: 0.04em; }
@@ -165,6 +171,11 @@
 .chip-called    { background: rgba(255,255,255,0.3); }
 .chip-done      { background: rgba(255,255,255,0.2); }
 .chip-cancelled { background: rgba(255,255,255,0.15); }
+.chip-rescheduled {
+  background: white;
+  color: #6d28d9;
+  border-color: white;
+}
 
 /* ===== BANNERS ===== */
 .banner-called,
@@ -604,4 +615,52 @@
   .meet-call-card { flex-direction: column; align-items: flex-start; text-align: left; }
   .meet-call-btn { width: 100%; text-align: center; }
   .doc-row-action { margin-left: 0; width: 100%; justify-content: space-between; }
+}
+
+
+/* ── Aviso de turno reagendado (cliente) ── */
+.rescheduled-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  background: #f5f3ff;
+  border: 1.5px solid #c4b5fd;
+  border-radius: 16px;
+  padding: 1.25rem 1.5rem;
+  margin-top: 1.25rem;
+}
+
+.rescheduled-card-icon {
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: #7c3aed;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rescheduled-card-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #5b21b6;
+  margin-bottom: 0.25rem;
+}
+
+.rescheduled-card-date {
+  font-size: 1rem;
+  color: #6d28d9;
+  margin-bottom: 0.35rem;
+}
+
+.rescheduled-card-note {
+  font-size: 0.85rem;
+  color: #7c3aed;
+  line-height: 1.4;
+}
+
+@media (max-width: 640px) {
+  .rescheduled-card { padding: 1rem; gap: 0.75rem; }
 }

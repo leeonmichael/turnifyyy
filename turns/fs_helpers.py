@@ -31,11 +31,39 @@ def _fmt_time(iso_str: str) -> str:
         return str(iso_str)[:5]
 
 
+def is_scheduled_for_later(turn: dict) -> bool:
+    """¿El turno fue reagendado para un día posterior a hoy?
+
+    Un turno reagendado se guarda con status 'waiting' y una fecha en
+    'scheduled_for'. Mientras esa fecha no llegue no pertenece a la cola de
+    hoy: no debe contarse en la espera, ni poder llamarse, ni ocupar posición.
+    El día de la cita (y en adelante) vuelve a entrar en la cola con normalidad.
+    """
+    raw = str((turn or {}).get('scheduled_for') or '').strip()
+    if not raw:
+        return False
+    try:
+        return datetime.fromisoformat(raw).date() > datetime.now().date()
+    except Exception:
+        return False
+
+
+def is_in_todays_queue(turn: dict) -> bool:
+    """Turno en espera que sí corresponde atender hoy."""
+    return (turn or {}).get('status') == 'waiting' and not is_scheduled_for_later(turn)
+
+
 def _fmt_datetime(iso_str: str) -> str:
     if not iso_str:
         return ''
     try:
-        return datetime.fromisoformat(str(iso_str)).strftime('%d/%m/%Y %H:%M')
+        value = str(iso_str)
+        dt = datetime.fromisoformat(value)
+        # Los reagendamientos guardan solo el día ("2026-09-16"): mostrar
+        # "00:00" en esos casos confunde, así que se omite la hora.
+        if 'T' not in value and ' ' not in value:
+            return dt.strftime('%d/%m/%Y')
+        return dt.strftime('%d/%m/%Y %H:%M')
     except Exception:
         return str(iso_str)
 
@@ -144,6 +172,7 @@ def broadcast_turn_update():
                 'called_by':    t.get('called_by', ''),
                 'created_by':   t.get('created_by', ''),
                 'scheduled_for':_fmt_datetime(t.get('scheduled_for', '')),
+                'scheduled_for_later': is_scheduled_for_later(t),
                 'meet_link':          t.get('meet_link', ''),
                 'required_documents': t.get('required_documents', []),
                 'uploaded_documents': t.get('uploaded_documents', []),

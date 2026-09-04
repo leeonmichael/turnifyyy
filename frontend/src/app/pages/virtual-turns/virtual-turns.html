@@ -67,7 +67,7 @@
         </div>
       </div>
 
-      <div class="chat-messages" id="chatMessages">
+      <div class="chat-messages" id="chatMessages" #chatMessages>
         <div *ngFor="let msg of displayMessages"
              class="chat-message"
              [class.system-message]="msg.isSystem"
@@ -88,8 +88,8 @@
         <input
           [(ngModel)]="newMessage"
           (keyup.enter)="sendMessage()"
-          placeholder="Escribe un mensaje para el cliente (mínimo 50 caracteres)..."
-          minlength="50"
+          placeholder="Escribe un mensaje para el cliente (máximo 150 caracteres)..."
+          maxlength="150"
           [disabled]="sendingMessage"
           class="chat-input"
         />

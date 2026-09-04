@@ -27,7 +27,7 @@ export class Dashboard implements OnInit, OnDestroy {
   completedToday = 0;
   totalUsers = 0;
   employees: any[] = [];
-  
+
    empUsername = '';
    empPassword = '';
    empFullName = '';
@@ -100,7 +100,7 @@ export class Dashboard implements OnInit, OnDestroy {
         if (Array.isArray(msg)) {
           this.turns = msg;
           this.currentTurn = this.turns.find((t: any) => t.status === 'called');
-          const next = this.turns.find((t: any) => t.status === 'waiting');
+          const next = this.turns.find((t: any) => t.status === 'waiting' && !t.scheduled_for_later);
           this.nextTurn = next?.number || 'NO HAY';
           this.cdr.detectChanges();
         }
@@ -377,16 +377,16 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   private validateSedeFields(name: string, city: string, address: string): boolean {
-    if (name.trim().length < 20) {
-      alert('El nombre de la sede debe tener mínimo 20 caracteres');
+    if (name.trim().length > 20) {
+      alert('El nombre de la sede debe tener máximo 20 caracteres');
       return false;
     }
-    if (city.trim().length < 20) {
-      alert('La ciudad debe tener mínimo 20 caracteres');
+    if (city.trim().length > 20) {
+      alert('La ciudad debe tener máximo 20 caracteres');
       return false;
     }
-    if (address.trim().length < 20) {
-      alert('La dirección debe tener mínimo 20 caracteres');
+    if (address.trim().length > 20) {
+      alert('La dirección debe tener máximo 20 caracteres');
       return false;
     }
     return true;

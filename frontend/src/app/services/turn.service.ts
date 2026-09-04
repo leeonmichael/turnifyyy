@@ -82,8 +82,10 @@ export class TurnService {
     return this.http.post(`${this.apiUrl}/virtual/review-document/`, { turn_number, document_key, status, note }, { headers: this.getHeaders() });
   }
 
-  sendVirtualChatMessage(turn_number: string, text: string): Observable<any> {
-    return this.http.post(`${this.apiUrl}/virtual/send-message/`, { turn_number, text }, { headers: this.getHeaders() });
+  // turn_id identifica el turno sin ambigüedad; turn_number se envía como
+  // respaldo para el cliente, que solo conoce el número de su turno.
+  sendVirtualChatMessage(turn_number: string, text: string, turn_id: string = ''): Observable<any> {
+    return this.http.post(`${this.apiUrl}/virtual/send-message/`, { turn_number, text, turn_id }, { headers: this.getHeaders() });
   }
 
   getStatistics(): Observable<any> {
@@ -134,7 +136,7 @@ export class TurnService {
   updateStats(): void {
     const turns = this.turns.value;
     this.stats.next({
-      waiting: turns.filter((t: any) => t.status === 'waiting').length,
+      waiting: turns.filter((t: any) => t.status === 'waiting' && !t.scheduled_for_later).length,
       totalToday: turns.length,
         processed: turns.filter((t: any) => t.status === 'finished').length
     });

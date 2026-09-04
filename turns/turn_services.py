@@ -11,7 +11,8 @@ from .firebase_config import db
 from .fs_helpers import (
     _fs_all_turns, _fs_get_user, _get_employee_sede_id, _sedes_map, _resolve_sede_name,
     generate_turn_fb, get_turn_prefix, broadcast_turn_update,
-    generate_meet_link, _fmt_time, _fmt_datetime,
+    generate_meet_link, _fmt_time, _fmt_datetime, is_in_todays_queue,
+    is_scheduled_for_later,
 )
 
 # Documentos requeridos para turnos virtuales — fuente única de verdad,
@@ -163,6 +164,7 @@ def get_my_active_turn_service(username: str) -> tuple[dict, int]:
         'sede':         _resolve_sede_name(t.get('sede_id', '')),
         'created_at':   _fmt_datetime(t.get('created_at', '')),
         'scheduled_for':      _fmt_datetime(t.get('scheduled_for', '')) or None,
+        'scheduled_for_later': is_scheduled_for_later(t),
         'meet_link':          t.get('meet_link', ''),
         'required_documents': t.get('required_documents', []),
         'uploaded_documents': t.get('uploaded_documents', []),
@@ -192,6 +194,7 @@ def get_my_turns_service(username: str) -> tuple[dict, int]:
         'created_at':   _fmt_datetime(t.get('created_at', '')),
         'finished_at':  _fmt_datetime(t.get('finished_at', '')) or None,
         'scheduled_for':_fmt_datetime(t.get('scheduled_for', '')) or None,
+        'scheduled_for_later': is_scheduled_for_later(t),
         'meet_link':    t.get('meet_link', ''),
     } for t in user_turns]}, 200
 
@@ -201,7 +204,7 @@ def get_position_service(turn_number: str) -> tuple[dict, int]:
         return {'position': None, 'turns_ahead': 0, 'status': None}, 200
 
     all_turns = _fs_all_turns()
-    waiting   = sorted([t for t in all_turns if t.get('status') == 'waiting'], key=lambda t: t.get('created_at', ''))
+    waiting   = sorted([t for t in all_turns if is_in_todays_queue(t)], key=lambda t: t.get('created_at', ''))
     position  = next((i + 1 for i, t in enumerate(waiting) if t.get('number') == turn_number), None)
     turn_doc  = next((t for t in all_turns if t.get('number') == turn_number), None)
     return {
@@ -230,7 +233,8 @@ def call_next_service(called_by: str, calling_role: str, service_type: str = '')
     employee_sede_id = _get_employee_sede_id(called_by, calling_role)
 
     all_turns = _fs_all_turns()
-    waiting = [t for t in all_turns if t.get('status') == 'waiting']
+    # Los turnos reagendados para otro día no se llaman hoy.
+    waiting = [t for t in all_turns if is_in_todays_queue(t)]
     if employee_sede_id:
         # Cada empleado (incluido el especialista virtual, sede_id='VIRTUAL')
         # solo atiende turnos de su propia sede/cola.
@@ -320,6 +324,9 @@ def get_all_turns_service(username: str, role: str) -> tuple[dict, int]:
         'called_by':    t.get('called_by', ''),
         'created_by':   t.get('created_by', ''),
         'scheduled_for':_fmt_datetime(t.get('scheduled_for', '')),
+        # Marca los turnos reagendados a futuro para que el front los saque de
+        # la cola de hoy sin tener que reinterpretar la fecha ya formateada.
+        'scheduled_for_later': is_scheduled_for_later(t),
         'meet_link':          t.get('meet_link', ''),
         'required_documents': t.get('required_documents', []),
         'uploaded_documents': t.get('uploaded_documents', []),
@@ -333,7 +340,7 @@ def get_statistics_service() -> tuple[dict, int]:
     all_turns = _fs_all_turns()
     return {
         'total':     len(all_turns),
-        'waiting':   sum(1 for t in all_turns if t.get('status') == 'waiting'),
+        'waiting':   sum(1 for t in all_turns if is_in_todays_queue(t)),
         'called':    sum(1 for t in all_turns if t.get('status') == 'called'),
         'finished':  sum(1 for t in all_turns if t.get('status') == 'finished'),
         'cancelled': sum(1 for t in all_turns if t.get('status') == 'cancelled'),

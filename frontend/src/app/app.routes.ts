@@ -25,7 +25,7 @@ export const routes: Routes = [
   { path: 'dashboard', component: Dashboard, canActivate: [authGuard, roleGuard], data: { roles: ['admin'] } },
   { path: 'employee', component: Employee, canActivate: [authGuard, roleGuard, nonVirtualEmployeeGuard], data: { roles: ['employee'] } },
   { path: 'manage-users', component: ManageUsers, canActivate: [authGuard, roleGuard, nonVirtualEmployeeGuard], data: { roles: ['employee', 'admin'] } },
-  { path: 'reschedule-turns', component: RescheduleTurns, canActivate: [authGuard, roleGuard, nonVirtualEmployeeGuard], data: { roles: ['employee', 'admin'] } },
+  { path: 'reschedule-turns', component: RescheduleTurns, canActivate: [authGuard, roleGuard, nonVirtualEmployeeGuard], data: { roles: ['employee'] } },
   { path: 'screen', component: Screen },
   { path: 'chatbot', component: Chatbot, canActivate: [authGuard] },
   { path: '**', redirectTo: '/login' },

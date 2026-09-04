@@ -65,7 +65,7 @@ class TurnConsumer(AsyncWebsocketConsumer):
     def _get_all_turns_data(self):
         from .firebase_config import db
         from .views import _fmt_time, _fmt_datetime
-        from .fs_helpers import _sedes_map, _resolve_sede_name
+        from .fs_helpers import _sedes_map, _resolve_sede_name, is_scheduled_for_later
         if not db:
             return []
         sedes_map = _sedes_map()
@@ -85,6 +85,7 @@ class TurnConsumer(AsyncWebsocketConsumer):
                 'called_by':    t.get('called_by', ''),
                 'created_by':   t.get('created_by', ''),
                 'scheduled_for':_fmt_datetime(t.get('scheduled_for', '')),
+                'scheduled_for_later': is_scheduled_for_later(t),
                 'meet_link':          t.get('meet_link', ''),
                 'required_documents': t.get('required_documents', []),
                 'uploaded_documents': t.get('uploaded_documents', []),
@@ -96,14 +97,14 @@ class TurnConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def _get_waiting_turns_data(self):
         from .firebase_config import db
-        from .fs_helpers import _sedes_map, _resolve_sede_name
+        from .fs_helpers import _sedes_map, _resolve_sede_name, is_in_todays_queue
         if not db:
             return []
         sedes_map = _sedes_map()
         data = []
         for doc in db.collection('turns').stream():
             t = doc.to_dict()
-            if t and t.get('status') == 'waiting':
+            if t and is_in_todays_queue(t):
                 data.append({
                     'number':  t.get('number'),
                     'status':  'waiting',
@@ -116,6 +117,7 @@ class TurnConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def _get_position_data(self, user_turn):
         from .firebase_config import db
+        from .fs_helpers import is_in_todays_queue
         if not db:
             return {'position': -1, 'turns_ahead': -1, 'message': 'Service unavailable'}
         all_docs = list(db.collection('turns').stream())
@@ -125,7 +127,7 @@ class TurnConsumer(AsyncWebsocketConsumer):
             return {'position': -1, 'turns_ahead': -1, 'message': 'Turn not found'}
         if user_doc.get('status') == 'finished':
             return {'position': 0, 'turns_ahead': 0, 'status': 'finished'}
-        waiting = sorted([t for t in all_turns if t.get('status') == 'waiting'], key=lambda t: t.get('created_at', ''))
+        waiting = sorted([t for t in all_turns if is_in_todays_queue(t)], key=lambda t: t.get('created_at', ''))
         idx = next((i for i, t in enumerate(waiting) if t.get('number') == user_turn), -1)
         if idx == -1:
             return {'position': -1, 'turns_ahead': -1, 'status': user_doc.get('status'), 'user_turn': user_turn}
