@@ -42,8 +42,13 @@ def create_turn_service(user_name: str, service_type: str = 'general', sede_id: 
             None
         )
         if existing:
+            is_rescheduled = bool(existing.get('scheduled_for'))
+            error_msg = (
+                'Ya tienes un turno reagendado pendiente. Debes esperar a que sea atendido o cancelarlo antes de pedir uno nuevo.'
+                if is_rescheduled else 'Ya tienes un turno activo'
+            )
             return {
-                'error':           'Ya tienes un turno activo',
+                'error':           error_msg,
                 'existing_number': existing.get('number', ''),
                 'existing_sede':   _resolve_sede_name(existing.get('sede_id', ''))
             }, 400
@@ -69,6 +74,18 @@ def create_turn_service(user_name: str, service_type: str = 'general', sede_id: 
     meet_link = generate_meet_link(number) if is_virtual else ''
     required_documents = VIRTUAL_REQUIRED_DOCUMENTS if is_virtual else []
 
+    # Si el usuario canceló un turno reagendado anteriormente, se le aplica
+    # la multa pendiente sobre este nuevo turno (ver cancel_turn/cancel_turn_by_id).
+    fine_notice = ''
+    if user_name:
+        u = _fs_get_user(user_name)
+        if u and u.get('fine_pending'):
+            fine_notice = 'Se aplicó una multa a este turno por la cancelación de tu cita reagendada anterior.'
+            db.collection('users').document(user_name).update({
+                'fine_pending':    False,
+                'fine_cleared_at': timezone.now().isoformat(),
+            })
+
     db.collection('turns').add({
         'number':        number,
         'status':        'waiting',
@@ -84,12 +101,14 @@ def create_turn_service(user_name: str, service_type: str = 'general', sede_id: 
         'required_documents': required_documents,
         'uploaded_documents': [],
         'chat_messages':      [],
+        'has_fine':           bool(fine_notice),
     })
     broadcast_turn_update()
     return {
         'number': number,
         'meet_link': meet_link,
         'required_documents': required_documents,
+        'fine_notice': fine_notice,
     }, 200
 
 
@@ -143,6 +162,7 @@ def get_my_active_turn_service(username: str) -> tuple[dict, int]:
         'sede_id':      t.get('sede_id', ''),
         'sede':         _resolve_sede_name(t.get('sede_id', '')),
         'created_at':   _fmt_datetime(t.get('created_at', '')),
+        'scheduled_for':      _fmt_datetime(t.get('scheduled_for', '')) or None,
         'meet_link':          t.get('meet_link', ''),
         'required_documents': t.get('required_documents', []),
         'uploaded_documents': t.get('uploaded_documents', []),

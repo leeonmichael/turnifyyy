@@ -180,8 +180,13 @@ export class Chatbot implements OnInit, AfterViewChecked {
   }
 
   private scrollToBottom(): void {
-    try { this.chatBody.nativeElement.scrollTop = this.chatBody.nativeElement.scrollHeight; }
-    catch (_) {}
+    try {
+      const el = this.chatBody.nativeElement;
+      el.scrollTop = el.scrollHeight;
+      // Segundo intento tras el próximo frame por si una imagen (ej. avatar)
+      // aún no había terminado de cargar y cambió la altura del contenido.
+      requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
+    } catch (_) {}
   }
 
   private now(): string {

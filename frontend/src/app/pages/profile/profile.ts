@@ -46,45 +46,24 @@ updateProfile(): void {
     this.loading = true;
     this.message = '';
 
-    fetch('/api/update-profile/', {
-      method: 'PUT',
-      credentials: 'same-origin',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRFToken': this.getCookie('csrftoken') || ''
+    // Solo correo y teléfono son editables — la cédula y el nombre son
+    // datos únicos/identificativos y no se envían aunque estén en el modelo.
+    this.auth.updateProfile({ email: this.user.email, phone: this.user.phone }).subscribe({
+      next: (data: any) => {
+        this.loading = false;
+        if (data.success) {
+          this.message = 'Perfil actualizado correctamente';
+          this.messageType = 'success';
+        } else {
+          this.message = data.message || 'Error al actualizar el perfil';
+          this.messageType = 'error';
+        }
       },
-      body: JSON.stringify(this.user)
-    })
-    .then(res => res.json())
-    .then(data => {
-      this.loading = false;
-      if (data.success) {
-        this.message = 'Perfil actualizado correctamente';
-        this.messageType = 'success';
-      } else {
-        this.message = data.message || 'Error al actualizar el perfil';
+      error: (err: any) => {
+        this.loading = false;
+        this.message = err?.error?.message || 'Error de conexión';
         this.messageType = 'error';
       }
-    })
-    .catch(() => {
-      this.loading = false;
-      this.message = 'Error de conexión';
-      this.messageType = 'error';
     });
-  }
-
-  getCookie(name: string): string | null {
-    let cookieValue = null;
-    if (document.cookie && document.cookie !== '') {
-      const cookies = document.cookie.split(';');
-      for (let i = 0; i < cookies.length; i++) {
-        const cookie = cookies[i].trim();
-        if (cookie.substring(0, name.length + 1) === (name + '=')) {
-          cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-          break;
-        }
-      }
-    }
-    return cookieValue;
   }
 }

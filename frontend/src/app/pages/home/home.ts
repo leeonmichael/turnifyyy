@@ -41,6 +41,7 @@ export class Home implements OnInit, OnDestroy {
   userTurnSedeId = '';
   userTurnStatus = '';        // 'waiting' | 'called' | 'finished' | 'cancelled'
   userTurnServiceType = '';
+  userTurnScheduledFor: string | null = null;
   positionNum = 0;
   turnsAhead = 0;
 
@@ -202,6 +203,7 @@ export class Home implements OnInit, OnDestroy {
           this.userTurnSedeId = t.sede_id || '';
           this.userTurnStatus = t.status;
           this.userTurnServiceType = t.service_type || '';
+          this.userTurnScheduledFor = t.scheduled_for || null;
           this.meetLink            = t.meet_link || '';
           this.uploadedDocuments   = t.uploaded_documents || [];
           this.chatMessages        = t.chat_messages || [];
@@ -266,6 +268,7 @@ export class Home implements OnInit, OnDestroy {
     if (mine.sede) this.userTurnSede = mine.sede;
     if (mine.sede_id) this.userTurnSedeId = mine.sede_id;
     if (mine.service_type) this.userTurnServiceType = mine.service_type;
+    this.userTurnScheduledFor = mine.scheduled_for || null;
     this.meetLink          = mine.meet_link || this.meetLink;
     this.uploadedDocuments = mine.uploaded_documents || this.uploadedDocuments;
     this.chatMessages      = mine.chat_messages || this.chatMessages;
@@ -352,6 +355,7 @@ export class Home implements OnInit, OnDestroy {
     this.userTurnSedeId    = '';
     this.userTurnStatus    = '';
     this.userTurnServiceType = '';
+    this.userTurnScheduledFor = null;
     this.meetLink           = '';
     this.uploadedDocuments  = [];
     this.chatMessages       = [];
@@ -393,6 +397,7 @@ export class Home implements OnInit, OnDestroy {
         this.userTurnSedeId    = sedeId;
         this.userTurnStatus    = 'waiting';
         this.userTurnServiceType = serviceType;
+        this.userTurnScheduledFor = null;
         this.meetLink           = data.meet_link || '';
         this.uploadedDocuments  = [];
         this.chatMessages       = [];
@@ -409,13 +414,16 @@ export class Home implements OnInit, OnDestroy {
         this.showTurnModal = true;
         this.ws.send({ action: 'get_all' });
         setTimeout(() => this.pollPosition(), 800);
+        if (data.fine_notice) alert(data.fine_notice);
         this.cdr.detectChanges();
       },
       error: (err: any) => {
         this.requestingTurn = false;
         const msg = err?.error?.error || '';
         if (msg.includes('Ya tienes un turno')) {
-          // Backend already has an active turn — sync it
+          // Backend ya tiene un turno activo (o reagendado) para este usuario —
+          // no se permite pedir otro hasta que sea atendido o cancelado.
+          alert(msg);
           this.errorMsg = '';
           this.loadActiveTurn();
         } else {
@@ -428,9 +436,17 @@ export class Home implements OnInit, OnDestroy {
 
   cancelTurn(): void {
     if (!this.userTurn) return;
+    const isRescheduled = !!this.userTurnScheduledFor;
+    if (isRescheduled) {
+      const confirmed = confirm(
+        'Este turno fue reagendado. Si lo cancelas ahora, se te generará una multa que se aplicará a tu próxima cita agendada. ¿Deseas continuar con la cancelación?'
+      );
+      if (!confirmed) return;
+    }
     const num = this.userTurn;
     this.http.delete(`${this.turn.getBaseUrl()}/cancel-turn/${num}/`, { headers: this.getHeaders() }).subscribe({
       next: () => {
+        if (isRescheduled) alert('Turno cancelado. Se ha generado una multa para tu próxima cita agendada.');
         this.resetTurnState();
         this.view = 'request';
         this.cdr.detectChanges();
@@ -471,6 +487,10 @@ export class Home implements OnInit, OnDestroy {
   sendChatMessage(): void {
     const text = this.chatInput.trim();
     if (!text || !this.userTurn || this.sendingChat) return;
+    if (text.length < 50) {
+      alert('El mensaje debe tener mínimo 50 caracteres');
+      return;
+    }
     this.sendingChat = true;
     this.turn.sendVirtualChatMessage(this.userTurn, text).subscribe({
       next: (data: any) => {

@@ -276,11 +276,12 @@ def update_profile(request):
     if not u:
         return Response({'success': False, 'message': 'Usuario no encontrado'}, status=404)
 
-    full_name = request.data.get('full_name', u.get('full_name', '')).strip()
-    email     = request.data.get('email',     u.get('email',     '')).strip()
-    phone     = request.data.get('phone',     u.get('phone',     '')).strip()
+    # La cédula y el nombre completo son datos únicos/identificativos y no
+    # se pueden modificar desde el perfil — solo correo y teléfono.
+    email = request.data.get('email', u.get('email', '')).strip()
+    phone = request.data.get('phone', u.get('phone', '')).strip()
 
-    updates = {'full_name': full_name, 'email': email, 'phone': phone, 'updated_at': timezone.now().isoformat()}
+    updates = {'email': email, 'phone': phone, 'updated_at': timezone.now().isoformat()}
 
     if 'password' in request.data and request.data['password']:
         pw = request.data['password'].strip()
@@ -302,7 +303,7 @@ def update_profile(request):
         'message': 'Perfil actualizado correctamente',
         'user': {
             'username':  username,
-            'full_name': full_name,
+            'full_name': u.get('full_name', ''),
             'email':     email,
             'phone':     phone,
             'cedula':    u.get('cedula', ''),
@@ -901,6 +902,12 @@ def cancel_turn(request, turn_number):
                 'cancelled_by': c_by,
                 'cancelled_at': timezone.now().isoformat()
             })
+            if t.get('scheduled_for') and t.get('created_by'):
+                db.collection('users').document(t['created_by']).update({
+                    'fine_pending':     True,
+                    'fine_reason':      f"Cancelación del turno reagendado {t.get('number', '')}",
+                    'fine_created_at':  timezone.now().isoformat(),
+                })
         broadcast_turn_update()
     return Response({'success': True})
 
@@ -923,13 +930,21 @@ def cancel_turn_by_id(request, turn_id):
     if t.get('created_by') != username or t.get('status') != 'waiting':
         return Response({'error': 'Turno no encontrado o no se puede cancelar'}, status=404)
 
+    was_rescheduled = bool(t.get('scheduled_for'))
+
     db.collection('turns').document(str(turn_id)).update({
         'status':       'cancelled',
         'finished_at':  timezone.now().isoformat(),
         'cancelled_by': username
     })
+    if was_rescheduled:
+        db.collection('users').document(username).update({
+            'fine_pending':    True,
+            'fine_reason':     f"Cancelación del turno reagendado {t.get('number', '')}",
+            'fine_created_at': timezone.now().isoformat(),
+        })
     broadcast_turn_update()
-    return Response({'success': True})
+    return Response({'success': True, 'fined': was_rescheduled})
 
 
 @csrf_exempt
@@ -1117,6 +1132,8 @@ def send_virtual_chat_message(request):
         return Response({'success': False, 'message': 'Servicio no disponible'}, status=503)
     if not turn_number or not text:
         return Response({'success': False, 'message': 'Escribe un mensaje'}, status=400)
+    if len(text) < 50:
+        return Response({'success': False, 'message': 'El mensaje debe tener mínimo 50 caracteres'}, status=400)
     if len(text) > 1000:
         return Response({'success': False, 'message': 'El mensaje es demasiado largo'}, status=400)
 
@@ -1200,6 +1217,12 @@ def create_sede(request):
 
     if not name:
         return Response({'success': False, 'message': 'El nombre de la sede es requerido'}, status=400)
+    if len(name) < 20:
+        return Response({'success': False, 'message': 'El nombre de la sede debe tener mínimo 20 caracteres'}, status=400)
+    if len(city) < 20:
+        return Response({'success': False, 'message': 'La ciudad debe tener mínimo 20 caracteres'}, status=400)
+    if len(address) < 20:
+        return Response({'success': False, 'message': 'La dirección debe tener mínimo 20 caracteres'}, status=400)
     if not db:
         return Response({'success': False, 'message': 'Servicio no disponible'}, status=503)
 
@@ -1230,6 +1253,13 @@ def update_sede(request, sede_id):
     city    = request.data.get('city',    current.get('city', '')).strip()
     address = request.data.get('address', current.get('address', '')).strip()
 
+    if len(name) < 20:
+        return Response({'success': False, 'message': 'El nombre de la sede debe tener mínimo 20 caracteres'}, status=400)
+    if len(city) < 20:
+        return Response({'success': False, 'message': 'La ciudad debe tener mínimo 20 caracteres'}, status=400)
+    if len(address) < 20:
+        return Response({'success': False, 'message': 'La dirección debe tener mínimo 20 caracteres'}, status=400)
+
     for d in db.collection('sedes').stream():
         dd = d.to_dict() or {}
         if d.id != str(sede_id) and dd.get('name', '').lower() == name.lower() and dd.get('is_active', True):
@@ -1250,6 +1280,14 @@ def delete_sede(request, sede_id):
     doc = db.collection('sedes').document(str(sede_id)).get()
     if not doc.exists:
         return Response({'success': False, 'message': 'Sede no encontrada'}, status=404)
+
+    all_users = _fs_all_users()
+    has_employees = any(
+        u.get('role') == 'employee' and u.get('sede_id') == str(sede_id) and u.get('is_active', True)
+        for u in all_users
+    )
+    if has_employees:
+        return Response({'success': False, 'message': 'No se puede eliminar la sede porque tiene empleados registrados. Reasigna o desactiva a los empleados de esta sede primero.'}, status=409)
 
     name = (doc.to_dict() or {}).get('name', str(sede_id))
     db.collection('sedes').document(str(sede_id)).update({'is_active': False, 'updated_at': timezone.now().isoformat()})

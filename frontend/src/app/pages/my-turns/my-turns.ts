@@ -53,9 +53,19 @@ export class MyTurns implements OnInit, OnDestroy {
     });
   }
 
-  cancelTurn(turnId: string): void {
-    this.http.delete(`/api/cancel-turn-by-id/${turnId}/`, { headers: this.getHeaders() }).subscribe({
-      next: () => this.loadMyTurns(),
+  cancelTurn(turn: any): void {
+    const isRescheduled = !!turn.scheduled_for;
+    if (isRescheduled) {
+      const confirmed = confirm(
+        'Este turno fue reagendado. Si lo cancelas ahora, se te generará una multa que se aplicará a tu próxima cita agendada. ¿Deseas continuar con la cancelación?'
+      );
+      if (!confirmed) return;
+    }
+    this.http.delete(`/api/cancel-turn-by-id/${turn.id}/`, { headers: this.getHeaders() }).subscribe({
+      next: () => {
+        if (isRescheduled) alert('Turno cancelado. Se ha generado una multa para tu próxima cita agendada.');
+        this.loadMyTurns();
+      },
       error: () => alert('Error al cancelar el turno')
     });
   }

@@ -207,6 +207,10 @@ export class VirtualTurns implements OnInit, OnDestroy {
   sendMessage(): void {
     const text = this.newMessage.trim();
     if (!text || !this.activeVirtualTurn || this.sendingMessage) return;
+    if (text.length < 50) {
+      alert('El mensaje debe tener mínimo 50 caracteres');
+      return;
+    }
     this.sendingMessage = true;
     this.turn.sendVirtualChatMessage(this.activeVirtualTurn.number, text).subscribe({
       next: (data: any) => {

@@ -232,7 +232,8 @@
             <input
               [(ngModel)]="chatInput"
               (keyup.enter)="sendChatMessage()"
-              placeholder="Escribe tu mensaje..."
+              placeholder="Escribe tu mensaje (mínimo 50 caracteres)..."
+              minlength="50"
               [disabled]="sendingChat"
               class="client-chat-input" />
             <button (click)="sendChatMessage()" [disabled]="sendingChat" class="client-chat-send">

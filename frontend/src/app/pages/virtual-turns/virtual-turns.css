@@ -313,6 +313,9 @@
 .msg-body {
   font-size: 0.9375rem;
   line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 /* Input del chat */
