@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.turnify</groupId>
+  <artifactId>pruebas-selenium</artifactId>
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+
+  <name>Turnify Pro - Pruebas automatizadas de la aplicacion web</name>
+  <description>
+    Casos de prueba automatizados con Selenium WebDriver y JUnit 5 para la
+    aplicacion web de Turnify Pro (Angular + Django). Proyecto academico SENA,
+    ficha 3203084.
+  </description>
+
+  <properties>
+    <maven.compiler.release>17</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <selenium.version>4.48.0</selenium.version>
+    <junit.version>5.14.4</junit.version>
+    <jackson.version>2.22.2</jackson.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.seleniumhq.selenium</groupId>
+      <artifactId>selenium-java</artifactId>
+      <version>${selenium.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>${jackson.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.16.0</version>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.6.0</version>
+        <configuration>
+          <!-- Las clases se ejecutan en orden (T01, T02, ...) porque unas
+               dejan preparados los datos que usan las siguientes. -->
+          <runOrder>alphabetical</runOrder>
+          <!-- Un fallo en un caso no debe impedir que se ejecuten los demas
+               modulos: el informe final recoge todos los resultados. -->
+          <skipAfterFailureCount>0</skipAfterFailureCount>
+          <testFailureIgnore>true</testFailureIgnore>
+          <systemPropertyVariables>
+            <!-- Se pueden cambiar al ejecutar: -Dturnify.headless=false -->
+            <turnify.base>${turnify.base}</turnify.base>
+            <turnify.headless>${turnify.headless}</turnify.headless>
+          </systemPropertyVariables>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+
+  <profiles>
+    <!-- Valores por defecto de los parametros de ejecucion -->
+    <profile>
+      <id>valores-por-defecto</id>
+      <activation><activeByDefault>true</activeByDefault></activation>
+      <properties>
+        <turnify.base>http://127.0.0.1:4200</turnify.base>
+        <turnify.headless>true</turnify.headless>
+      </properties>
+    </profile>
+  </profiles>
+
+</project>

@@ -1,0 +1,12 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Solo el Test 01 - Inicio de sesion" type="JUnit" factoryName="JUnit">
+    <module name="pruebas-selenium" />
+    <option name="PACKAGE_NAME" value="com.turnify.pruebas" />
+    <option name="MAIN_CLASS_NAME" value="com.turnify.pruebas.Test01InicioSesionExitoso" />
+    <option name="TEST_OBJECT" value="class" />
+    <option name="WORKING_DIRECTORY" value="$MODULE_WORKING_DIR$" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

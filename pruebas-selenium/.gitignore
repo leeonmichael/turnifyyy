@@ -1,0 +1,17 @@
+# Compilacion de Maven
+target/
+
+# Evidencias y descargas que generan las pruebas al ejecutarse
+evidencias/
+descargas/
+
+# Credenciales locales (nunca se suben)
+credenciales.local.properties
+
+# Archivos propios del IDE
+.idea/
+*.iml
+
+# Driver y metadatos que descarga Selenium Manager
+msedgedriver/
+se-metadata.json

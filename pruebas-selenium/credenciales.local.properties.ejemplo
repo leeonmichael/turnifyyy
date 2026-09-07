@@ -1,0 +1,7 @@
+# Copia este archivo como "credenciales.local.properties" y completa los valores.
+# El archivo real no se sube al repositorio.
+#
+# Cuenta de administrador de la aplicacion web, necesaria para los casos del
+# dashboard (CP-41 a CP-49) y para crear los empleados de prueba.
+turnify.admin.usuario=qa_admin_web
+turnify.admin.clave=
