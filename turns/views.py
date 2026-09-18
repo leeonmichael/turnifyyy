@@ -13,15 +13,17 @@ import csv
 import io
 import re
 import json
+import logging
 from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
 from django.utils import timezone
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from django.contrib.auth.hashers import make_password, check_password
 from collections import Counter
 from .fs_helpers import (
     get_turn_prefix, _fmt_time, _fmt_datetime, _fs_all_turns, _fs_all_users,
     _fs_get_user, _get_employee_sede_id, generate_turn_fb, broadcast_turn_update,
     _sedes_map, _resolve_sede_name, validate_schedule_date,
+    is_in_todays_queue, is_scheduled_for_later,
 )
 from .turn_services import (
     create_turn_service, cancel_own_turn_service, get_my_active_turn_service,
@@ -31,6 +33,8 @@ from .turn_services import (
 )
 from .storage_helpers import upload_virtual_document_file
 from .ai_assistant import get_chatbot_reply_stream, get_proactive_message, transcribe_audio, AIUnavailableError
+
+logger = logging.getLogger(__name__)
 
 
 # ─── Page views ──────────────────────────────────────────────────────────────
@@ -54,11 +58,13 @@ def validate_email(email: str) -> bool:
     return bool(re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email))
 
 
-def validate_numeric(value: str, min_length: int):
+def validate_numeric(value: str, min_length: int, max_length: int = None):
     if not value.isdigit():
         return False, "Debe contener solo números"
     if len(value) < min_length:
         return False, f"Debe tener mínimo {min_length} dígitos"
+    if max_length is not None and len(value) > max_length:
+        return False, f"Debe tener máximo {max_length} dígitos"
     return True, ""
 
 
@@ -102,7 +108,7 @@ def register_user(request):
 
     if not cedula:
         return Response({'success': False, 'field': 'cedula', 'message': 'El número de documento es requerido'}, status=400)
-    valid, msg = validate_numeric(cedula, 10)
+    valid, msg = validate_numeric(cedula, 5, 11)
     if not valid:
         return Response({'success': False, 'field': 'cedula', 'message': msg}, status=400)
     if any(u.get('cedula') == cedula for u in _fs_all_users()):
@@ -276,11 +282,12 @@ def update_profile(request):
     if not u:
         return Response({'success': False, 'message': 'Usuario no encontrado'}, status=404)
 
-    full_name = request.data.get('full_name', u.get('full_name', '')).strip()
-    email     = request.data.get('email',     u.get('email',     '')).strip()
-    phone     = request.data.get('phone',     u.get('phone',     '')).strip()
+    # La cédula y el nombre completo son datos únicos/identificativos y no
+    # se pueden modificar desde el perfil — solo correo y teléfono.
+    email = request.data.get('email', u.get('email', '')).strip()
+    phone = request.data.get('phone', u.get('phone', '')).strip()
 
-    updates = {'full_name': full_name, 'email': email, 'phone': phone, 'updated_at': timezone.now().isoformat()}
+    updates = {'email': email, 'phone': phone, 'updated_at': timezone.now().isoformat()}
 
     if 'password' in request.data and request.data['password']:
         pw = request.data['password'].strip()
@@ -302,7 +309,7 @@ def update_profile(request):
         'message': 'Perfil actualizado correctamente',
         'user': {
             'username':  username,
-            'full_name': full_name,
+            'full_name': u.get('full_name', ''),
             'email':     email,
             'phone':     phone,
             'cedula':    u.get('cedula', ''),
@@ -721,7 +728,7 @@ def get_waiting_turns(request):
         return Response({'turns': []})
     all_turns = _fs_all_turns()
     waiting = sorted(
-        [t for t in all_turns if t.get('status') == 'waiting' and t.get('service_type') == service_type],
+        [t for t in all_turns if is_in_todays_queue(t) and t.get('service_type') == service_type],
         key=lambda t: t.get('created_at', '')
     )
     return Response({'turns': [{'number': t.get('number'), 'service_type': t.get('service_type')} for t in waiting]})
@@ -735,7 +742,7 @@ def get_next_turn(request):
         return Response({'number': None})
     all_turns = _fs_all_turns()
     waiting = sorted(
-        [t for t in all_turns if t.get('status') == 'waiting' and t.get('service_type') == service_type],
+        [t for t in all_turns if is_in_todays_queue(t) and t.get('service_type') == service_type],
         key=lambda t: t.get('created_at', '')
     )
     return Response({'number': waiting[0].get('number') if waiting else None})
@@ -774,6 +781,11 @@ def call_specific_turn(request):
         candidates = [t for t in candidates if t.get('sede_id') == employee_sede_id]
     if not candidates:
         return Response({'success': False, 'message': 'Turn not found'}, status=404)
+    # Un turno reagendado no se atiende antes de la fecha acordada con el cliente.
+    if candidates and all(is_scheduled_for_later(t) for t in candidates):
+        fecha = _fmt_datetime(candidates[0].get('scheduled_for', ''))
+        return Response({'success': False, 'message': f'Este turno está reagendado para el {fecha}'}, status=400)
+    candidates = [t for t in candidates if not is_scheduled_for_later(t)]
 
     turn = candidates[0]
     db.collection('turns').document(turn['_doc_id']).update({
@@ -790,10 +802,8 @@ def call_specific_turn(request):
 @jwt_required
 @role_required('admin', 'employee')
 def reschedule_current(request):
-    token    = get_token_from_request(request)
-    payload  = decode_access_token(token) if token else None
-    username = (payload.get('username') or '') if payload else ''
-    role     = (payload.get('role')     or '') if payload else ''
+    username = request.jwt_payload.get('username', '')
+    role     = request.jwt_payload.get('role', '')
     sede_id  = _get_employee_sede_id(username, role)
 
     if not db:
@@ -853,14 +863,18 @@ def reschedule_turn(request, turn_number):
     if error:
         return Response({'success': False, 'message': error}, status=400)
 
-    db.collection('turns').document(matches[0]['_doc_id']).update({
-        'status':          'rescheduled',
-        'called_by':       '',
-        'scheduled_for':   iso_date,
-        'rescheduled_at':  timezone.now().isoformat()
-    })
-    broadcast_turn_update()
-    return Response({'success': True, 'message': 'Turno reagendado', 'scheduled_for': iso_date})
+    try:
+        db.collection('turns').document(matches[0]['_doc_id']).update({
+            'status':          'rescheduled',
+            'called_by':       '',
+            'scheduled_for':   iso_date,
+            'rescheduled_at':  timezone.now().isoformat()
+        })
+        broadcast_turn_update()
+        return Response({'success': True, 'message': 'Turno reagendado', 'scheduled_for': iso_date})
+    except Exception as e:
+        logger.exception("Error en reschedule_turn")
+        return Response({'success': False, 'message': f'Error interno: {str(e)}'}, status=500)
 
 
 @csrf_exempt
@@ -911,6 +925,12 @@ def cancel_turn(request, turn_number):
                 'cancelled_by': c_by,
                 'cancelled_at': timezone.now().isoformat()
             })
+            if t.get('status') == 'rescheduled' and t.get('created_by'):
+                db.collection('users').document(t['created_by']).update({
+                    'fine_pending':     True,
+                    'fine_reason':      f"Cancelación del turno reagendado {t.get('number', '')}",
+                    'fine_created_at':  timezone.now().isoformat(),
+                })
         broadcast_turn_update()
     return Response({'success': True})
 
@@ -930,16 +950,24 @@ def cancel_turn_by_id(request, turn_id):
         return Response({'error': 'Turno no encontrado o no se puede cancelar'}, status=404)
 
     t = doc.to_dict() or {}
-    if t.get('created_by') != username or t.get('status') != 'waiting':
+    if t.get('created_by') != username or t.get('status') not in ('waiting', 'rescheduled'):
         return Response({'error': 'Turno no encontrado o no se puede cancelar'}, status=404)
+
+    was_rescheduled = t.get('status') == 'rescheduled'
 
     db.collection('turns').document(str(turn_id)).update({
         'status':       'cancelled',
         'finished_at':  timezone.now().isoformat(),
         'cancelled_by': username
     })
+    if was_rescheduled:
+        db.collection('users').document(username).update({
+            'fine_pending':    True,
+            'fine_reason':     f"Cancelación del turno reagendado {t.get('number', '')}",
+            'fine_created_at': timezone.now().isoformat(),
+        })
     broadcast_turn_update()
-    return Response({'success': True})
+    return Response({'success': True, 'fined': was_rescheduled})
 
 
 @csrf_exempt
@@ -984,17 +1012,51 @@ def export_csv(request):
 @csrf_exempt
 @api_view(['GET'])
 def export_excel(request):
-    # Return CSV (avoids pandas/openpyxl dependency)
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(['number', 'status', 'service_type', 'created_at'])
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+    from openpyxl.utils import get_column_letter
+
+    headers = ['Número', 'Estado', 'Tipo de servicio', 'Creado', 'Cliente',
+               'Cédula', 'Sede', 'Reagendado para', 'Link videollamada']
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Turnos'
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+
     if db:
+        sedes_map = _sedes_map()
         for doc in db.collection('turns').stream():
             t = doc.to_dict()
             if t:
-                writer.writerow([t.get('number'), t.get('status'), t.get('service_type'), t.get('created_at')])
-    response = HttpResponse(output.getvalue(), content_type='text/csv')
-    response['Content-Disposition'] = 'attachment; filename="turns.csv"'
+                client_data = t.get('client_data') or {}
+                ws.append([
+                    t.get('number', ''),
+                    t.get('status', ''),
+                    t.get('service_type', ''),
+                    t.get('created_at', ''),
+                    client_data.get('full_name', '') or t.get('created_by', ''),
+                    client_data.get('cedula', ''),
+                    _resolve_sede_name(t.get('sede_id', ''), sedes_map),
+                    t.get('scheduled_for', ''),
+                    t.get('meet_link', ''),
+                ])
+
+    # Ancho de columna según el contenido más largo, para que se lea sin ajustar a mano.
+    for idx, header in enumerate(headers, start=1):
+        longest = max([len(str(c.value or '')) for c in ws[get_column_letter(idx)]] or [len(header)])
+        ws.column_dimensions[get_column_letter(idx)].width = min(longest + 2, 50)
+    ws.freeze_panes = 'A2'
+
+    output = io.BytesIO()
+    wb.save(output)
+    response = HttpResponse(
+        output.getvalue(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = 'attachment; filename="turns.xlsx"'
     return response
 
 
@@ -1118,6 +1180,7 @@ def review_virtual_document(request):
 @api_view(['POST'])
 @jwt_required
 def send_virtual_chat_message(request):
+    turn_id     = (request.data.get('turn_id', '') or '').strip()
     turn_number = request.data.get('turn_number', '')
     text        = (request.data.get('text', '') or '').strip()
     username    = request.jwt_payload.get('username', '')
@@ -1125,13 +1188,32 @@ def send_virtual_chat_message(request):
 
     if not db:
         return Response({'success': False, 'message': 'Servicio no disponible'}, status=503)
-    if not turn_number or not text:
+    if not (turn_id or turn_number) or not text:
         return Response({'success': False, 'message': 'Escribe un mensaje'}, status=400)
-    if len(text) > 1000:
-        return Response({'success': False, 'message': 'El mensaje es demasiado largo'}, status=400)
+    if len(text) > 150:
+        return Response({'success': False, 'message': 'El mensaje debe tener máximo 150 caracteres'}, status=400)
 
     all_turns = _fs_all_turns()
-    matches = [t for t in all_turns if t.get('number') == turn_number]
+    if turn_id:
+        matches = [t for t in all_turns if t.get('_doc_id') == turn_id]
+    else:
+        # El número de turno (A10, B3...) se repite entre sedes y días, así que no
+        # identifica un turno por sí solo: nos quedamos con los turnos virtuales
+        # activos y priorizamos el que le corresponde a quien escribe.
+        matches = [
+            t for t in all_turns
+            if t.get('number') == turn_number
+            and t.get('service_type') == 'virtual'
+            and t.get('status') in ('waiting', 'called')
+        ]
+        own = [t for t in matches if t.get('created_by') == username]
+        if own:
+            matches = own
+        elif role in ('admin', 'employee'):
+            attending = [t for t in matches if t.get('called_by') == username]
+            if attending:
+                matches = attending
+
     if not matches:
         return Response({'success': False, 'message': 'Turno no encontrado'}, status=404)
     turn = matches[0]
@@ -1210,6 +1292,12 @@ def create_sede(request):
 
     if not name:
         return Response({'success': False, 'message': 'El nombre de la sede es requerido'}, status=400)
+    if len(name) < 20:
+        return Response({'success': False, 'message': 'El nombre de la sede debe tener mínimo 20 caracteres'}, status=400)
+    if len(city) < 20:
+        return Response({'success': False, 'message': 'La ciudad debe tener mínimo 20 caracteres'}, status=400)
+    if len(address) < 20:
+        return Response({'success': False, 'message': 'La dirección debe tener mínimo 20 caracteres'}, status=400)
     if not db:
         return Response({'success': False, 'message': 'Servicio no disponible'}, status=503)
 
@@ -1240,6 +1328,13 @@ def update_sede(request, sede_id):
     city    = request.data.get('city',    current.get('city', '')).strip()
     address = request.data.get('address', current.get('address', '')).strip()
 
+    if len(name) < 20:
+        return Response({'success': False, 'message': 'El nombre de la sede debe tener mínimo 20 caracteres'}, status=400)
+    if len(city) < 20:
+        return Response({'success': False, 'message': 'La ciudad debe tener mínimo 20 caracteres'}, status=400)
+    if len(address) < 20:
+        return Response({'success': False, 'message': 'La dirección debe tener mínimo 20 caracteres'}, status=400)
+
     for d in db.collection('sedes').stream():
         dd = d.to_dict() or {}
         if d.id != str(sede_id) and dd.get('name', '').lower() == name.lower() and dd.get('is_active', True):
@@ -1260,6 +1355,14 @@ def delete_sede(request, sede_id):
     doc = db.collection('sedes').document(str(sede_id)).get()
     if not doc.exists:
         return Response({'success': False, 'message': 'Sede no encontrada'}, status=404)
+
+    all_users = _fs_all_users()
+    has_employees = any(
+        u.get('role') == 'employee' and u.get('sede_id') == str(sede_id) and u.get('is_active', True)
+        for u in all_users
+    )
+    if has_employees:
+        return Response({'success': False, 'message': 'No se puede eliminar la sede porque tiene empleados registrados. Reasigna o desactiva a los empleados de esta sede primero.'}, status=409)
 
     name = (doc.to_dict() or {}).get('name', str(sede_id))
     db.collection('sedes').document(str(sede_id)).update({'is_active': False, 'updated_at': timezone.now().isoformat()})

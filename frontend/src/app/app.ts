@@ -18,7 +18,7 @@ export class App implements OnInit {
   userRole: string = 'client';
   router = inject(Router);
 
-  routesWithoutLayout = ['/login', '/register'];
+  routesWithoutLayout = ['/login', '/register', '/chatbot'];
   routesWithoutFooter = ['/virtual-turns'];
 
   ngOnInit(): void {

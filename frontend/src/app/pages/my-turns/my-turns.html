@@ -140,9 +140,9 @@
 
           <!-- Actions -->
           <div class="turn-actions-col">
-            @if (turn.status === 'waiting') {
-              <button (click)="cancelTurn(turn.id)" class="btn-cancel">
-                Cancelar
+            @if (turn.status === 'waiting' || turn.status === 'rescheduled') {
+              <button (click)="cancelTurn(turn)" class="btn-cancel">
+                {{ turn.status === 'rescheduled' ? 'Cancelar turno reagendado' : 'Cancelar' }}
               </button>
             } @else {
               <span class="no-action">—</span>

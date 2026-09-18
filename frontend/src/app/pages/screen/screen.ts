@@ -84,7 +84,7 @@ export class Screen implements OnInit, OnDestroy {
 
   private processData(turns: any[]): void {
     this.currentTurn  = turns.find((t: any) => t.status === 'called') || null;
-    const waiting     = turns.filter((t: any) => t.status === 'waiting');
+    const waiting     = turns.filter((t: any) => t.status === 'waiting' && !t.scheduled_for_later);
     this.nextTurns    = waiting.slice(0, 5);
     this.waitingCount = waiting.length;
   }

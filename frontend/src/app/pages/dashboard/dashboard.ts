@@ -27,7 +27,7 @@ export class Dashboard implements OnInit, OnDestroy {
   completedToday = 0;
   totalUsers = 0;
   employees: any[] = [];
-  
+
    empUsername = '';
    empPassword = '';
    empFullName = '';
@@ -100,7 +100,7 @@ export class Dashboard implements OnInit, OnDestroy {
         if (Array.isArray(msg)) {
           this.turns = msg;
           this.currentTurn = this.turns.find((t: any) => t.status === 'called');
-          const next = this.turns.find((t: any) => t.status === 'waiting');
+          const next = this.turns.find((t: any) => t.status === 'waiting' && !t.scheduled_for_later);
           this.nextTurn = next?.number || 'NO HAY';
           this.cdr.detectChanges();
         }
@@ -376,11 +376,28 @@ export class Dashboard implements OnInit, OnDestroy {
     this.router.navigate(['/login']);
   }
 
+  private validateSedeFields(name: string, city: string, address: string): boolean {
+    if (name.trim().length < 20) {
+      alert('El nombre de la sede debe tener mínimo 20 caracteres');
+      return false;
+    }
+    if (city.trim().length < 20) {
+      alert('La ciudad debe tener mínimo 20 caracteres');
+      return false;
+    }
+    if (address.trim().length < 20) {
+      alert('La dirección debe tener mínimo 20 caracteres');
+      return false;
+    }
+    return true;
+  }
+
   createSede(): void {
     if (!this.newSedeName) {
       alert('Ingrese el nombre de la sede');
       return;
     }
+    if (!this.validateSedeFields(this.newSedeName, this.newSedeCity, this.newSedeAddress)) return;
     this.http.post(`${this.turn.getBaseUrl()}/sedes/create/`, {
       name: this.newSedeName,
       city: this.newSedeCity,
@@ -412,6 +429,7 @@ export class Dashboard implements OnInit, OnDestroy {
 
   saveSedeEdit(): void {
     if (!this.editingSede) return;
+    if (!this.validateSedeFields(this.editingSede.name || '', this.editingSede.city || '', this.editingSede.address || '')) return;
     this.http.post(`${this.turn.getBaseUrl()}/sedes/update/${this.editingSede.id}/`, this.editingSede).subscribe({
       next: (data: any) => {
         if (data.success) {

@@ -200,18 +200,18 @@
   <div class="sedes-section">
     <h2>Gestión de Sedes</h2>
     <div class="sedes-form">
-      <input type="text" [(ngModel)]="newSedeName" name="newSedeName" placeholder="Nombre de la sede" class="form-control" />
-      <input type="text" [(ngModel)]="newSedeCity" name="newSedeCity" placeholder="Ciudad" class="form-control" />
-      <input type="text" [(ngModel)]="newSedeAddress" name="newSedeAddress" placeholder="Dirección" class="form-control" />
+      <input type="text" [(ngModel)]="newSedeName" name="newSedeName" placeholder="Nombre de la sede (mínimo 20 caracteres)" minlength="20" class="form-control" />
+      <input type="text" [(ngModel)]="newSedeCity" name="newSedeCity" placeholder="Ciudad (mínimo 20 caracteres)" minlength="20" class="form-control" />
+      <input type="text" [(ngModel)]="newSedeAddress" name="newSedeAddress" placeholder="Dirección (mínimo 20 caracteres)" minlength="20" class="form-control" />
       <button class="btn btn-primary" (click)="createSede()">+ Crear Sede</button>
     </div>
 
     <div *ngIf="showSedeForm && editingSede" class="edit-form">
       <h3>Editar Sede: {{ editingSede.name }}</h3>
       <div class="sedes-form">
-        <input type="text" [(ngModel)]="editingSede.name" placeholder="Nombre de la sede" class="form-control" />
-        <input type="text" [(ngModel)]="editingSede.city" placeholder="Ciudad" class="form-control" />
-        <input type="text" [(ngModel)]="editingSede.address" placeholder="Dirección" class="form-control" />
+        <input type="text" [(ngModel)]="editingSede.name" placeholder="Nombre de la sede (mínimo 20 caracteres)" minlength="20" class="form-control" />
+        <input type="text" [(ngModel)]="editingSede.city" placeholder="Ciudad (mínimo 20 caracteres)" minlength="20" class="form-control" />
+        <input type="text" [(ngModel)]="editingSede.address" placeholder="Dirección (mínimo 20 caracteres)" minlength="20" class="form-control" />
         <button class="btn btn-success btn-sm" (click)="saveSedeEdit()">Guardar</button>
         <button class="btn btn-secondary btn-sm" (click)="cancelSedeEdit()">Cancelar</button>
       </div>

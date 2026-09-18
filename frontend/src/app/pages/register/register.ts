@@ -107,8 +107,14 @@ export class Register implements OnInit {
       this.focusError();
       return;
     }
-    if (this.cedula.length < 10) {
-      this.error = 'El documento debe tener mínimo 10 dígitos';
+    if (this.cedula.length < 5) {
+      this.error = 'El documento debe tener mínimo 5 dígitos';
+      this.errorField = 'cedula';
+      this.focusError();
+      return;
+    }
+    if (this.cedula.length > 11) {
+      this.error = 'El documento debe tener máximo 11 dígitos';
       this.errorField = 'cedula';
       this.focusError();
       return;

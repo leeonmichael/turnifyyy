@@ -125,7 +125,7 @@
                 <line x1="7" y1="9" x2="17" y2="9"></line>
                 <line x1="7" y1="13" x2="13" y2="13"></line>
               </svg>
-              <input type="text" [(ngModel)]="cedula" name="cedula" class="form-control" placeholder="Mínimo 10 dígitos" required />
+              <input type="text" [(ngModel)]="cedula" name="cedula" class="form-control" placeholder="Entre 5 y 11 dígitos" minlength="5" maxlength="11" required />
             </div>
           </div>
           <div class="form-group">

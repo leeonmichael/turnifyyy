@@ -22,7 +22,7 @@
 .users-card h1 {
   color: #1e293b;
   text-align: center;
-  margin-bottom: 2rem;
+  margin: 0;
   font-size: 1.75rem;
   font-weight: 700;
   letter-spacing: -0.01em;
@@ -77,4 +77,72 @@
 .btn-delete:hover {
   background: #dc2626;
   transform: translateY(-1px);
+}
+
+/* ── Cabecera + búsqueda ── */
+.users-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.5rem;
+}
+
+.users-count {
+  background: #4a90f7;
+  color: white;
+  padding: 0.375rem 0.875rem;
+  border-radius: 9999px;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.users-search-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1.75rem;
+}
+
+.users-search-select,
+.users-search-input {
+  padding: 0.625rem 0.875rem;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 0.9375rem;
+  font-family: inherit;
+  color: #1e293b;
+  background: white;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.users-search-select:focus,
+.users-search-input:focus { border-color: #4a90f7; }
+
+.users-search-select { min-width: 140px; cursor: pointer; }
+.users-search-input  { flex: 1; min-width: 220px; }
+
+.users-search-clear,
+.users-search-reload {
+  padding: 0.625rem 1.125rem;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.users-search-clear  { background: #e2e8f0; color: #475569; }
+.users-search-reload { background: #4a90f7; color: white; }
+
+.users-search-clear:hover,
+.users-search-reload:hover { opacity: 0.85; }
+
+@media (max-width: 640px) {
+  .users-search-select,
+  .users-search-input { width: 100%; flex: none; }
 }

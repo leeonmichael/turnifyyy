@@ -59,9 +59,10 @@ def notify_upcoming_turns() -> None:
         db.collection('turns').document(doc_id).update({'push_notified_called': True})
 
     # Notifica a quienes están a punto de ser llamados (por sede, misma cola que usa el front).
+    from .fs_helpers import is_in_todays_queue
     by_sede: dict[str, list[tuple[str, dict]]] = {}
     for doc_id, t in entries:
-        if t.get('status') == 'waiting':
+        if is_in_todays_queue(t):
             by_sede.setdefault(t.get('sede_id', ''), []).append((doc_id, t))
 
     for sede, waiting in by_sede.items():

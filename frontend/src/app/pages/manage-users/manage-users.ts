@@ -1,5 +1,6 @@
 import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { Router, NavigationEnd } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
@@ -9,7 +10,7 @@ import { Subject } from 'rxjs';
 @Component({
   selector: 'app-manage-users',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule],
   templateUrl: './manage-users.html',
   styleUrl: './manage-users.css'
 })
@@ -17,6 +18,12 @@ export class ManageUsers implements OnInit, OnDestroy {
   users: any[] = [];
   loading = false;
   errorMessage = '';
+
+  // Búsqueda: se elige el campo (nombre o cédula) y se escribe el dato.
+  filteredUsers: any[] = [];
+  searchField: 'full_name' | 'cedula' = 'full_name';
+  searchTerm = '';
+
   private destroy$ = new Subject<void>();
 
   constructor(
@@ -64,6 +71,7 @@ export class ManageUsers implements OnInit, OnDestroy {
       next: (data: any) => {
         this.loading = false;
         this.users = (data.users || []).filter((u: any) => u.role === 'client');
+        this.applySearch();
         this.cdr.detectChanges();
       },
       error: (err) => {
@@ -71,9 +79,29 @@ export class ManageUsers implements OnInit, OnDestroy {
         this.errorMessage = err?.error?.message || `Error ${err?.status || ''}: no se pudieron cargar los usuarios`;
         console.error('Error loading users:', err);
         this.users = [];
+        this.filteredUsers = [];
         this.cdr.detectChanges();
       }
     });
+  }
+
+  applySearch(): void {
+    const term = this.searchTerm.trim().toLowerCase();
+    this.filteredUsers = !term
+      ? this.users
+      : this.users.filter((u: any) =>
+          String(u[this.searchField] || '').toLowerCase().includes(term)
+        );
+    this.cdr.detectChanges();
+  }
+
+  clearSearch(): void {
+    this.searchTerm = '';
+    this.applySearch();
+  }
+
+  trackByUsername(index: number, user: any): string {
+    return user.username;
   }
 
   toggleUserActive(username: string, isActive: boolean): void {
@@ -82,6 +110,7 @@ export class ManageUsers implements OnInit, OnDestroy {
         if (data.success) {
           const user = this.users.find(u => u.username === username);
           if (user) user.is_active = data.is_active;
+          this.cdr.detectChanges();
         } else {
           alert(data.message || 'Error al cambiar estado del usuario');
         }
