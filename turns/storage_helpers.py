@@ -20,10 +20,11 @@ from .firebase_config import db
 ALLOWED_EXTENSIONS = {'jpg', 'jpeg', 'png', 'pdf'}
 MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024  # 8MB
 
-# El bucket es privado, así que se guarda una URL firmada. Dura un año para
-# que el enlace almacenado en el turno siga sirviendo mientras el turno
-# tenga vigencia.
-SIGNED_URL_TTL = timedelta(days=365)
+# El bucket es privado, así que se guarda una URL firmada. Google Cloud
+# Storage limita las URLs firmadas V4 a 7 días máximo (rechaza cualquier
+# valor mayor), así que se usa ese tope en vez del año que duraba con
+# Supabase.
+SIGNED_URL_TTL = timedelta(days=7)
 
 
 def upload_virtual_document_file(turn_number: str, document_key: str, django_file):
