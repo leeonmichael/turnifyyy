@@ -11,5 +11,7 @@ services:
         value: "False"
       - key: FIREBASE_CREDENTIALS_JSON
         sync: false
+      - key: FIREBASE_STORAGE_BUCKET
+        value: turnify-pro.firebasestorage.app
       - key: GEMINI_API_KEY
         sync: false
