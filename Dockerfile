@@ -20,6 +20,7 @@ RUN npm --prefix frontend run build
 RUN python manage.py collectstatic --noinput
 
 ENV PORT=8000
+ENV PYTHONUNBUFFERED=1
 EXPOSE 8000
 
 CMD python manage.py migrate --noinput && python -m daphne -b 0.0.0.0 -p $PORT config.asgi:application
