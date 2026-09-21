@@ -337,6 +337,31 @@ def get_chatbot_reply_stream(message: str, history: list, username: str, role: s
         yield {'type': 'error', 'message': str(e)}
 
 
+def transcribe_audio(audio_bytes: bytes, mime_type: str) -> str:
+    """Transcribe una nota de voz a texto con Gemini (usado por el chat por
+    voz de la app móvil — el navegador web ya transcribe en el cliente con
+    la Web Speech API, así que este camino es exclusivo de React Native)."""
+    client = _get_client()
+    if not client:
+        raise AIUnavailableError("Cliente de Gemini no configurado")
+
+    try:
+        response = client.models.generate_content(
+            model=settings.GEMINI_MODEL,
+            contents=[
+                types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
+                types.Part.from_text(
+                    text="Transcribe exactamente lo que se dice en este audio, en español. "
+                         "Responde únicamente con la transcripción, sin comentarios, comillas "
+                         "ni texto adicional."
+                ),
+            ],
+        )
+        return (response.text or '').strip()
+    except Exception as e:
+        raise AIUnavailableError(str(e))
+
+
 def get_proactive_message(turn_number: str, position: int) -> str:
     """Genera un aviso breve y cálido cuando el turno del usuario está por
     ser llamado (llamado desde home.ts cuando turns_ahead <= 2). Sin
