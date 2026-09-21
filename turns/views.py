@@ -31,7 +31,7 @@ from .turn_services import (
     get_all_turns_service, get_statistics_service, VIRTUAL_REQUIRED_DOCUMENTS,
 )
 from .storage_helpers import upload_virtual_document_file
-from .ai_assistant import get_chatbot_reply_stream, get_proactive_message, transcribe_audio, AIUnavailableError
+from .ai_assistant import get_chatbot_reply_stream, get_proactive_message, AIUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -1413,71 +1413,6 @@ def chatbot_view(request):
         return ai_unavailable_response
 
     def event_stream():
-        yield json.dumps(first_event) + '\n'
-        for event in gen:
-            yield json.dumps(event) + '\n'
-
-    return StreamingHttpResponse(event_stream(), content_type='application/x-ndjson')
-
-
-@csrf_exempt
-@jwt_required
-def chatbot_voice_view(request):
-    """Igual que chatbot_view, pero recibe una nota de voz grabada en la app
-    móvil (multipart: 'audio' + 'history'). La web transcribe en el propio
-    navegador con la Web Speech API y solo usa chatbot_view; React Native no
-    tiene ese API, así que aquí se transcribe con Gemini antes de responder."""
-    if request.method != 'POST':
-        return JsonResponse({'error': 'Método no permitido'}, status=405)
-
-    payload  = request.jwt_payload
-    username = payload.get('username', '')
-    role     = payload.get('role', 'client')
-
-    audio_file = request.FILES.get('audio')
-    if not audio_file:
-        return JsonResponse({'error': 'Audio requerido'}, status=400)
-
-    try:
-        history = json.loads(request.POST.get('history') or '[]')
-    except (ValueError, TypeError):
-        history = []
-
-    audio_bytes = audio_file.read()
-    content_type = (audio_file.content_type or '').lower()
-    name = (audio_file.name or '').lower()
-    if 'm4a' in content_type or name.endswith('.m4a') or 'mp4' in content_type:
-        mime_type = 'audio/mp4'
-    elif content_type.startswith('audio/'):
-        mime_type = content_type
-    else:
-        mime_type = 'audio/mp4'
-
-    ai_unavailable_response = JsonResponse({
-        'error': 'ai_unavailable',
-        'message': 'El asistente de IA no está disponible en este momento. '
-                   'Intenta de nuevo más tarde o usa las opciones del menú.',
-    }, status=503)
-
-    try:
-        transcript = transcribe_audio(audio_bytes, mime_type)
-    except AIUnavailableError:
-        return ai_unavailable_response
-
-    if not transcript:
-        return JsonResponse({'error': 'No se pudo entender el audio. Intenta de nuevo.'}, status=400)
-
-    gen = get_chatbot_reply_stream(message=transcript, history=history, username=username, role=role)
-
-    try:
-        first_event = next(gen)
-    except AIUnavailableError:
-        return ai_unavailable_response
-    except StopIteration:
-        return ai_unavailable_response
-
-    def event_stream():
-        yield json.dumps({'type': 'transcript', 'text': transcript}) + '\n'
         yield json.dumps(first_event) + '\n'
         for event in gen:
             yield json.dumps(event) + '\n'
