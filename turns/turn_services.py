@@ -12,8 +12,52 @@ from .fs_helpers import (
     _fs_all_turns, _fs_get_user, _get_employee_sede_id, _sedes_map, _resolve_sede_name,
     generate_turn_fb, get_turn_prefix, broadcast_turn_update,
     generate_meet_link, _fmt_time, _fmt_datetime, is_in_todays_queue,
-    is_scheduled_for_later,
+    is_scheduled_for_later, _get_call_counter, _set_call_counter,
 )
+
+# Cuántos turnos 'general' se atienden antes de intercalar uno
+# 'preferential', cuando ambas colas tienen gente esperando.
+GENERALS_PER_PREFERENTIAL_CYCLE = 2
+
+
+def _pick_next_waiting_turn(waiting: list, sede_key: str) -> dict | None:
+    """Elige el próximo turno a llamar de una sede.
+
+    Es FIFO puro salvo entre 'general' y 'preferential': ahí, en vez de
+    llamar siempre al más viejo sin importar el tipo, se alterna 2 turnos
+    generales por cada 1 preferencial mientras ambas colas tengan gente
+    esperando — así lo "preferencial" pesa de verdad sin dejar la fila
+    general parada. Otros tipos (emergencia, vip, virtual) siguen
+    llamándose por simple orden de llegada, como antes.
+    """
+    if not waiting:
+        return None
+
+    general_q = sorted((t for t in waiting if t.get('service_type') == 'general'), key=lambda t: t.get('created_at', ''))
+    pref_q    = sorted((t for t in waiting if t.get('service_type') == 'preferential'), key=lambda t: t.get('created_at', ''))
+    other_q   = sorted((t for t in waiting if t.get('service_type') not in ('general', 'preferential')), key=lambda t: t.get('created_at', ''))
+
+    pattern_pick, pattern_count = None, None
+    if general_q and pref_q:
+        pattern_count = _get_call_counter(sede_key)
+        pattern_pick = pref_q[0] if pattern_count >= GENERALS_PER_PREFERENTIAL_CYCLE else general_q[0]
+    elif general_q:
+        pattern_pick = general_q[0]
+    elif pref_q:
+        pattern_pick = pref_q[0]
+
+    candidates = [t for t in (pattern_pick, other_q[0] if other_q else None) if t]
+    if not candidates:
+        return None
+    turn = min(candidates, key=lambda t: t.get('created_at', ''))
+
+    # Solo se actualiza el contador si de verdad se llamó al turno que
+    # proponía el patrón (y no a uno de otro tipo que resultó más viejo).
+    if turn is pattern_pick and pattern_count is not None:
+        _set_call_counter(sede_key, 0 if turn.get('service_type') == 'preferential' else pattern_count + 1)
+
+    return turn
+
 
 # Documentos requeridos para turnos virtuales — fuente única de verdad,
 # el frontend la consulta por API (GET /api/virtual/document-requirements/)
@@ -239,14 +283,17 @@ def call_next_service(called_by: str, calling_role: str, service_type: str = '')
         # Cada empleado (incluido el especialista virtual, sede_id='VIRTUAL')
         # solo atiende turnos de su propia sede/cola.
         waiting = [t for t in waiting if t.get('sede_id') == employee_sede_id]
+
     if service_type:
+        # Filtro explícito a un solo tipo: se respeta tal cual, sin patrón.
         waiting = [t for t in waiting if t.get('service_type') == service_type]
-    waiting.sort(key=lambda t: t.get('created_at', ''))
+        waiting.sort(key=lambda t: t.get('created_at', ''))
+        turn = waiting[0] if waiting else None
+    else:
+        turn = _pick_next_waiting_turn(waiting, employee_sede_id or 'GLOBAL')
 
-    if not waiting:
+    if not turn:
         return {'message': 'No turns waiting'}, 200
-
-    turn = waiting[0]
     db.collection('turns').document(turn['_doc_id']).update({
         'status':    'called',
         'called_by': called_by,

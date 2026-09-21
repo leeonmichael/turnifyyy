@@ -108,6 +108,22 @@ def _get_employee_sede_id(username: str, role: str) -> str:
     return ''
 
 
+def _get_call_counter(sede_key: str) -> int:
+    """Cuántos turnos 'general' se han llamado seguidos, sin un
+    'preferential' de por medio, en la cola de esta sede (ver
+    turn_services._pick_next_waiting_turn)."""
+    if not db:
+        return 0
+    doc = db.collection('call_counters').document(sede_key).get()
+    return (doc.to_dict() or {}).get('generals_since_preferential', 0) if doc.exists else 0
+
+
+def _set_call_counter(sede_key: str, value: int) -> None:
+    if not db:
+        return
+    db.collection('call_counters').document(sede_key).set({'generals_since_preferential': value})
+
+
 def _sedes_map() -> dict:
     """{sede_id: name} de todas las sedes (activas e inactivas)."""
     if not db:
