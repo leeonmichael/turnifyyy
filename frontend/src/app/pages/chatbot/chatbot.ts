@@ -1,4 +1,4 @@
-import { Component, OnInit, AfterViewChecked, ElementRef, ViewChild, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, AfterViewChecked, ElementRef, ViewChild, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -21,7 +21,7 @@ interface ChatMessage {
   templateUrl: './chatbot.html',
   styleUrl:    './chatbot.css'
 })
-export class Chatbot implements OnInit, AfterViewChecked {
+export class Chatbot implements OnInit, AfterViewChecked, OnDestroy {
   @ViewChild('chatBody') private chatBody!: ElementRef;
 
   messages:    ChatMessage[] = [];
@@ -47,8 +47,10 @@ export class Chatbot implements OnInit, AfterViewChecked {
   isListening       = false;
   voiceEnabled      = false;
   micError: string | null = null;
-  private recognition: any = null;
-  private speechRecognitionCtor: any = null;
+  private mediaRecorder: MediaRecorder | null = null;
+  private mediaStream: MediaStream | null = null;
+  private audioChunks: Blob[] = [];
+  private silenceCtx: AudioContext | null = null;
 
   constructor(
     private router: Router,
@@ -61,7 +63,7 @@ export class Chatbot implements OnInit, AfterViewChecked {
   ngOnInit(): void {
     this.currentUser = this.auth.getCurrentUser();
     this.voiceEnabled = localStorage.getItem('turnify_voice_enabled') === 'true';
-    this.setupSpeechRecognition();
+    this.setupMicrophone();
 
     // Mensaje de bienvenida del bot
     const name = this.currentUser?.full_name?.split(' ')[0] || 'amigo/a';
@@ -76,92 +78,207 @@ export class Chatbot implements OnInit, AfterViewChecked {
     }
   }
 
-  private setupSpeechRecognition(): void {
-    this.speechRecognitionCtor =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    this.micSupported = !!this.speechRecognitionCtor;
+  // ── Micrófono ──────────────────────────────────────────────────────────
+  // Se graba el audio en el navegador y se envía a /api/chatbot/voice/,
+  // donde el servidor lo transcribe con Gemini y ejecuta la orden (igual que
+  // la app móvil). No se usa la Web Speech API del navegador porque depende
+  // de los servidores de Google y falla con "network" en Brave, Opera,
+  // algunas redes o antivirus, y no existe en Firefox.
+  private setupMicrophone(): void {
+    this.micSupported =
+      typeof window !== 'undefined' &&
+      !!navigator.mediaDevices?.getUserMedia &&
+      typeof (window as any).MediaRecorder !== 'undefined';
   }
 
-  // Chrome se pone inestable si se reutiliza la misma instancia de
-  // SpeechRecognition entre varios start()/stop() — por eso se crea una
-  // instancia nueva cada vez que el usuario le da al micrófono.
-  // Modo NO continuo: el navegador corta solo cuando el usuario deja de
-  // hablar y en ese momento se envía el mensaje automáticamente, para que
-  // el asistente ejecute la orden dicha por voz ("pídeme un turno") sin
-  // tener que tocar "Enviar". (El modo continuo además falla en Chrome
-  // para Android.)
-  private createRecognition(): any {
-    const recognition = new this.speechRecognitionCtor();
-    recognition.lang = 'es-CO';
-    recognition.continuous = false;
-    recognition.interimResults = true;
-    recognition.maxAlternatives = 1;
-
-    const baseText = this.userInput ? this.userInput.trimEnd() + ' ' : '';
-    let finalText = '';
-
-    recognition.onresult = (event: any) => {
-      let interim = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript;
-        if (event.results[i].isFinal) finalText += transcript;
-        else interim += transcript;
-      }
-      this.userInput = (baseText + finalText + interim).trim();
-      this.cdr.detectChanges();
-    };
-    recognition.onerror = (event: any) => {
-      this.isListening = false;
-      this.micError = this.describeMicError(event?.error);
-      this.cdr.detectChanges();
-    };
-    recognition.onend = () => {
-      const wasListening = this.isListening;
-      this.isListening = false;
-      this.recognition = null;
-      // Si hubo texto dictado, se envía de inmediato.
-      if (wasListening && (finalText || this.userInput).trim()) {
-        this.userInput = (baseText + finalText).trim() || this.userInput.trim();
-        this.sendMessage();
-      }
-      this.cdr.detectChanges();
-    };
-    return recognition;
-  }
-
-  private describeMicError(code: string): string | null {
-    switch (code) {
-      case 'not-allowed':
-      case 'service-not-allowed':
-        return 'No tengo permiso para usar el micrófono. Revisa el ícono de candado/cámara en la barra de direcciones de tu navegador y permite el acceso al micrófono para este sitio.';
-      case 'audio-capture':
-        return 'No se detectó ningún micrófono conectado en tu dispositivo.';
-      case 'network':
-        return 'Hubo un problema de conexión con el servicio de reconocimiento de voz. Intenta de nuevo.';
-      case 'no-speech':
-        return null; // No dijiste nada — no es realmente un error, no hace falta mostrar nada.
-      default:
-        return 'No se pudo activar el micrófono. Intenta de nuevo.';
+  private describeMicError(err: any): string {
+    const name = err?.name || '';
+    if (name === 'NotAllowedError' || name === 'SecurityError') {
+      return 'No tengo permiso para usar el micrófono. Revisa el ícono de candado en la barra de direcciones y permite el micrófono para este sitio.';
     }
+    if (name === 'NotFoundError' || name === 'OverconstrainedError') {
+      return 'No se detectó ningún micrófono conectado en tu dispositivo.';
+    }
+    if (name === 'NotReadableError') {
+      return 'El micrófono está siendo usado por otra aplicación. Ciérrala e intenta de nuevo.';
+    }
+    return 'No se pudo activar el micrófono. Intenta de nuevo.';
   }
 
-  toggleListening(): void {
-    if (!this.micSupported) return;
+  async toggleListening(): Promise<void> {
+    if (!this.micSupported || this.isTyping) return;
     if (this.isListening) {
-      // stop() dispara onend, que envía lo que se alcanzó a dictar.
-      this.recognition?.stop();
+      this.stopRecording();
       return;
     }
     this.micError = null;
-    this.recognition = this.createRecognition();
+    window.speechSynthesis?.cancel();
     try {
-      this.recognition.start();
-      this.isListening = true;
-    } catch {
-      this.isListening = false;
-      this.micError = 'No se pudo activar el micrófono. Intenta de nuevo.';
+      this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      this.micError = this.describeMicError(err);
+      this.cdr.detectChanges();
+      return;
     }
+
+    this.audioChunks = [];
+    this.mediaRecorder = new MediaRecorder(this.mediaStream);
+    this.mediaRecorder.ondataavailable = (e: BlobEvent) => {
+      if (e.data.size > 0) this.audioChunks.push(e.data);
+    };
+    this.mediaRecorder.onstop = () => this.onRecordingStopped();
+    this.mediaRecorder.start();
+    this.isListening = true;
+    this.watchSilence(this.mediaStream);
     this.cdr.detectChanges();
+  }
+
+  // Corta sola la grabación cuando el usuario deja de hablar (~1,5 s de
+  // silencio después de haber hablado), para que la orden se ejecute sin
+  // tener que tocar el botón otra vez. Máximo 20 s por nota.
+  private watchSilence(stream: MediaStream): void {
+    try {
+      const ctx = new AudioContext();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 1024;
+      ctx.createMediaStreamSource(stream).connect(analyser);
+      const data = new Uint8Array(analyser.fftSize);
+      const startedAt = Date.now();
+      let spoke = false;
+      let lastVoiceAt = Date.now();
+      this.silenceCtx = ctx;
+
+      const tick = () => {
+        if (!this.isListening) return;
+        analyser.getByteTimeDomainData(data);
+        let sum = 0;
+        for (const v of data) sum += (v - 128) * (v - 128);
+        const rms = Math.sqrt(sum / data.length);
+        const now = Date.now();
+        if (rms > 6) { spoke = true; lastVoiceAt = now; }
+        if ((spoke && now - lastVoiceAt > 1500) || (!spoke && now - startedAt > 8000) || now - startedAt > 20000) {
+          this.stopRecording();
+          return;
+        }
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    } catch {
+      // Sin AudioContext: el usuario detiene la grabación con el botón.
+    }
+  }
+
+  private stopRecording(): void {
+    this.isListening = false;
+    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+      this.mediaRecorder.stop();
+    }
+    this.mediaStream?.getTracks().forEach(t => t.stop());
+    this.mediaStream = null;
+    this.silenceCtx?.close().catch(() => {});
+    this.silenceCtx = null;
+    this.cdr.detectChanges();
+  }
+
+  private async onRecordingStopped(): Promise<void> {
+    const blob = new Blob(this.audioChunks, { type: this.mediaRecorder?.mimeType || 'audio/webm' });
+    this.audioChunks = [];
+    this.mediaRecorder = null;
+    if (blob.size < 2000) return; // grabación vacía
+
+    this.isTyping = true;
+    this.cdr.detectChanges();
+
+    let audio: Blob;
+    try {
+      // Se convierte a WAV porque es el formato que Gemini acepta en todos
+      // los casos (Chrome graba en webm, que no siempre lo acepta).
+      audio = await this.toWav(blob);
+    } catch {
+      audio = blob;
+    }
+
+    const history = this.messages
+      .filter(m => !m.typing)
+      .slice(-10)
+      .map(m => ({ role: m.role, text: m.text }));
+
+    const form = new FormData();
+    form.append('audio', audio, audio.type === 'audio/wav' ? 'voice.wav' : 'voice.webm');
+    form.append('history', JSON.stringify(history));
+
+    this.http.post('/api/chatbot/voice/', form, { responseType: 'text' }).subscribe({
+      next: (raw) => {
+        this.isTyping = false;
+        let transcript = '';
+        let reply = '';
+        for (const line of raw.split('\n')) {
+          if (!line.trim()) continue;
+          try {
+            const evt = JSON.parse(line);
+            if (evt.type === 'transcript') transcript = evt.text;
+            if (evt.type === 'chunk') reply += evt.text;
+          } catch { /* línea incompleta */ }
+        }
+        if (transcript) this.addUserMessage(transcript);
+        this.addBotMessage(
+          reply ||
+          (transcript ? this.generateLocalResponse(transcript)
+                      : 'No logré entender el audio. Intenta de nuevo hablando un poco más claro.')
+        );
+      },
+      error: (err) => {
+        this.isTyping = false;
+        if (err?.status === 422) {
+          this.micError = 'No logré entender el audio. Intenta de nuevo hablando un poco más claro y cerca del micrófono.';
+        } else if (err?.status === 401) {
+          this.micError = 'Tu sesión expiró. Vuelve a iniciar sesión.';
+        } else {
+          this.micError = 'El asistente de voz no está disponible en este momento. Escribe tu mensaje, por favor.';
+        }
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  private async toWav(blob: Blob): Promise<Blob> {
+    const ctx = new AudioContext();
+    try {
+      const decoded = await ctx.decodeAudioData(await blob.arrayBuffer());
+      const rate = 16000;
+      const offline = new OfflineAudioContext(1, Math.ceil(decoded.duration * rate), rate);
+      const src = offline.createBufferSource();
+      src.buffer = decoded;
+      src.connect(offline.destination);
+      src.start();
+      const samples = (await offline.startRendering()).getChannelData(0);
+
+      const buffer = new ArrayBuffer(44 + samples.length * 2);
+      const view = new DataView(buffer);
+      const writeStr = (o: number, s: string) => {
+        for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i));
+      };
+      writeStr(0, 'RIFF');
+      view.setUint32(4, 36 + samples.length * 2, true);
+      writeStr(8, 'WAVE');
+      writeStr(12, 'fmt ');
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true);        // PCM
+      view.setUint16(22, 1, true);        // mono
+      view.setUint32(24, rate, true);
+      view.setUint32(28, rate * 2, true);
+      view.setUint16(32, 2, true);
+      view.setUint16(34, 16, true);
+      writeStr(36, 'data');
+      view.setUint32(40, samples.length * 2, true);
+      for (let i = 0; i < samples.length; i++) {
+        const s = Math.max(-1, Math.min(1, samples[i]));
+        view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+      }
+      return new Blob([buffer], { type: 'audio/wav' });
+    } finally {
+      ctx.close().catch(() => {});
+    }
   }
 
   toggleVoice(): void {
@@ -184,6 +301,10 @@ export class Chatbot implements OnInit, AfterViewChecked {
     } catch {
       // Si falla la síntesis de voz, simplemente no se lee en voz alta.
     }
+  }
+
+  ngOnDestroy(): void {
+    if (this.isListening) this.stopRecording();
   }
 
   ngAfterViewChecked(): void {
