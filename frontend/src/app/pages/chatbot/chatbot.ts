@@ -242,7 +242,7 @@ export class Chatbot implements OnInit, AfterViewChecked, OnDestroy {
             detail = body?.detail || body?.message || '';
           } catch { /* respuesta no JSON */ }
           this.micError = `El asistente de voz no está disponible en este momento (código ${err?.status ?? '?'}` +
-            `${detail ? ': ' + detail.slice(0, 160) : ''}). Escribe tu mensaje, por favor.`;
+            `${detail ? ': ' + detail.slice(0, 600) : ''}). Escribe tu mensaje, por favor.`;
         }
         this.cdr.detectChanges();
       },

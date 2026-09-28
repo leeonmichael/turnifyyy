@@ -415,13 +415,8 @@ def transcribe_audio(audio_bytes: bytes, mime_type: str) -> str:
     if not client:
         raise AIUnavailableError("Cliente de Gemini no configurado (falta GEMINI_API_KEY)")
 
-    models = []
-    for m in (settings.GEMINI_MODEL, 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'):
-        if m and m not in models:
-            models.append(m)
-
-    last_error = None
-    for model in models:
+    errors = []
+    for model in _transcription_models(client):
         try:
             response = client.models.generate_content(
                 model=model,
@@ -436,10 +431,41 @@ def transcribe_audio(audio_bytes: bytes, mime_type: str) -> str:
             )
             return (response.text or '').strip()
         except Exception as e:
-            last_error = e
+            errors.append(f"{model}: {str(e)[:120]}")
             print(f"[chatbot-voz] Falló la transcripción con {model} ({mime_type}, "
                   f"{len(audio_bytes)} bytes): {e}", flush=True)
-    raise AIUnavailableError(str(last_error))
+    raise AIUnavailableError(' | '.join(errors) or 'Sin modelos disponibles')
+
+
+_available_flash_models = None
+
+
+def _transcription_models(client) -> list:
+    """Modelo configurado primero y luego los modelos "flash" que la API key
+    tiene disponibles de verdad (Google retira modelos con frecuencia, así
+    que no se usa una lista fija). La consulta se hace una sola vez."""
+    global _available_flash_models
+    if _available_flash_models is None:
+        found = []
+        try:
+            for m in client.models.list():
+                name = (getattr(m, 'name', '') or '').replace('models/', '')
+                actions = getattr(m, 'supported_actions', None) or []
+                if ('flash' in name and 'generateContent' in actions
+                        and not re.search(r'image|tts|live|audio|embed|thinking|exp|preview', name)):
+                    found.append(name)
+        except Exception as e:
+            print(f"[chatbot-voz] No se pudo listar los modelos: {e}", flush=True)
+        # Versiones más nuevas primero; "-lite" después de su versión completa.
+        found.sort(key=lambda n: ([-int(x) for x in re.findall(r'\d+', n)], 'lite' in n))
+        _available_flash_models = found[:4]
+        print(f"[chatbot-voz] Modelos flash disponibles: {_available_flash_models}", flush=True)
+
+    models = []
+    for m in [settings.GEMINI_MODEL, 'gemini-flash-latest', *_available_flash_models]:
+        if m and m not in models:
+            models.append(m)
+    return models[:4]
 
 
 def get_proactive_message(turn_number: str, position: int) -> str:

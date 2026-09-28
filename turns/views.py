@@ -1490,7 +1490,7 @@ def chatbot_voice_view(request):
         return JsonResponse({
             'error': 'ai_unavailable',
             'message': 'No se pudo transcribir el audio en este momento.',
-            'detail': str(e)[:300],
+            'detail': str(e)[:600],
         }, status=503)
 
     if not transcript:
