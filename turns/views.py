@@ -31,7 +31,7 @@ from .turn_services import (
     get_all_turns_service, get_statistics_service, VIRTUAL_REQUIRED_DOCUMENTS,
 )
 from .storage_helpers import upload_virtual_document_file
-from .ai_assistant import get_chatbot_reply_stream, get_proactive_message, AIUnavailableError
+from .ai_assistant import get_chatbot_reply_stream, get_proactive_message, get_fallback_reply, AIUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -1405,12 +1405,28 @@ def chatbot_view(request):
                    'Intenta de nuevo más tarde o usa las opciones del menú.',
     }, status=503)
 
+    def fallback_response():
+        # Sin IA: si el mensaje es una orden ("pídeme un turno", "cancela mi
+        # turno"...) se ejecuta igual la acción real; si no, 503 y el
+        # frontend responde con sus preguntas frecuentes locales.
+        try:
+            reply = get_fallback_reply(message, username, role)
+        except Exception:
+            reply = None
+        if not reply:
+            return ai_unavailable_response
+        body = (json.dumps({'type': 'chunk', 'text': reply}) + '\n'
+                + json.dumps({'type': 'done', 'actions_taken': []}) + '\n')
+        return HttpResponse(body, content_type='application/x-ndjson')
+
     try:
         first_event = next(gen)
-    except AIUnavailableError:
-        return ai_unavailable_response
-    except StopIteration:
-        return ai_unavailable_response
+    except (AIUnavailableError, StopIteration):
+        return fallback_response()
+
+    if first_event.get('type') == 'error':
+        # Gemini falló antes de escribir nada (key inválida, cuota agotada...).
+        return fallback_response()
 
     def event_stream():
         yield json.dumps(first_event) + '\n'

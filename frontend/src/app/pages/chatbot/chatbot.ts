@@ -83,28 +83,32 @@ export class Chatbot implements OnInit, AfterViewChecked {
   }
 
   // Chrome se pone inestable si se reutiliza la misma instancia de
-  // SpeechRecognition entre varios start()/stop() (a veces "arranca" y
-  // vuelve a cortar sola casi de inmediato) — por eso se crea una instancia
-  // nueva cada vez que el usuario le da al micrófono.
+  // SpeechRecognition entre varios start()/stop() — por eso se crea una
+  // instancia nueva cada vez que el usuario le da al micrófono.
+  // Modo NO continuo: el navegador corta solo cuando el usuario deja de
+  // hablar y en ese momento se envía el mensaje automáticamente, para que
+  // el asistente ejecute la orden dicha por voz ("pídeme un turno") sin
+  // tener que tocar "Enviar". (El modo continuo además falla en Chrome
+  // para Android.)
   private createRecognition(): any {
     const recognition = new this.speechRecognitionCtor();
-    recognition.lang = 'es-ES';
-    recognition.continuous = true;
-    recognition.interimResults = false;
+    recognition.lang = 'es-CO';
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+
+    const baseText = this.userInput ? this.userInput.trimEnd() + ' ' : '';
+    let finalText = '';
 
     recognition.onresult = (event: any) => {
-      // En modo continuo, event.results va creciendo con cada frase — solo
-      // se toman las entradas nuevas desde resultIndex para no repetir texto.
-      let newText = '';
+      let interim = '';
       for (let i = event.resultIndex; i < event.results.length; i++) {
-        if (event.results[i].isFinal) {
-          newText += event.results[i][0].transcript;
-        }
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) finalText += transcript;
+        else interim += transcript;
       }
-      if (newText) {
-        this.userInput = (this.userInput ? this.userInput.trimEnd() + ' ' : '') + newText.trim();
-        this.cdr.detectChanges();
-      }
+      this.userInput = (baseText + finalText + interim).trim();
+      this.cdr.detectChanges();
     };
     recognition.onerror = (event: any) => {
       this.isListening = false;
@@ -112,7 +116,14 @@ export class Chatbot implements OnInit, AfterViewChecked {
       this.cdr.detectChanges();
     };
     recognition.onend = () => {
+      const wasListening = this.isListening;
       this.isListening = false;
+      this.recognition = null;
+      // Si hubo texto dictado, se envía de inmediato.
+      if (wasListening && (finalText || this.userInput).trim()) {
+        this.userInput = (baseText + finalText).trim() || this.userInput.trim();
+        this.sendMessage();
+      }
       this.cdr.detectChanges();
     };
     return recognition;
@@ -137,8 +148,8 @@ export class Chatbot implements OnInit, AfterViewChecked {
   toggleListening(): void {
     if (!this.micSupported) return;
     if (this.isListening) {
+      // stop() dispara onend, que envía lo que se alcanzó a dictar.
       this.recognition?.stop();
-      this.isListening = false;
       return;
     }
     this.micError = null;

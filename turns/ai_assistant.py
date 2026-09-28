@@ -363,3 +363,164 @@ def get_proactive_message(turn_number: str, position: int) -> str:
         return response.text or "Tu turno está por ser llamado, prepárate."
     except Exception as e:
         raise AIUnavailableError(str(e))
+
+
+# ─── Respaldo sin IA: detecta la intención y ejecuta la acción real ──────────
+# Si Gemini no está disponible (sin API key, cuota agotada, error de red), el
+# chatbot igual debe poder ejecutar lo que el usuario pide por texto o por voz
+# ("pídeme un turno", "cancela mi turno", "¿cuántos faltan?"). Usa las mismas
+# herramientas que el modelo (_execute_tool), así que respeta el rol del JWT.
+
+import re
+import unicodedata
+
+_SERVICE_LABELS = {
+    'general': 'General', 'preferential': 'Preferencial',
+    'emergency': 'Emergencia', 'virtual': 'Virtual',
+}
+_STATUS_LABELS = {
+    'waiting': 'en espera', 'called': 'llamado', 'finished': 'finalizado',
+    'cancelled': 'cancelado',
+}
+
+
+def _normalize(text: str) -> str:
+    text = unicodedata.normalize('NFD', (text or '').lower())
+    return ''.join(c for c in text if unicodedata.category(c) != 'Mn')
+
+
+def _detect_service_type(t: str) -> str:
+    if re.search(r'preferencial|prioridad|tercera edad|adulto mayor|discapacidad|embarazada', t):
+        return 'preferential'
+    if re.search(r'emergencia|urgencia|urgente', t):
+        return 'emergency'
+    if re.search(r'virtual|en linea|online|videollamada', t):
+        return 'virtual'
+    return 'general'
+
+
+def _detect_sede_id(t: str) -> str:
+    sedes, _ = get_sedes_service()
+    for s in sedes.get('sedes', []):
+        for field in ('name', 'city'):
+            value = _normalize(s.get(field, ''))
+            if value and value in t:
+                return s['id']
+    return ''
+
+
+def _turn_number_in(message: str) -> str:
+    m = re.search(r'\b([abewABEW])\s*-?\s*(\d{1,4})\b', message)
+    return f"{m.group(1).upper()}{m.group(2).zfill(3)}" if m else ''
+
+
+def _active_turn(username: str):
+    data, _ = get_my_active_turn_service(username)
+    return (data or {}).get('turn')
+
+
+def get_fallback_reply(message: str, username: str, role: str):
+    """Devuelve la respuesta tras ejecutar la acción pedida, o None si el
+    mensaje no es una orden reconocible (el frontend usa entonces sus
+    respuestas locales de preguntas frecuentes)."""
+    t = _normalize(message)
+    is_how_question = bool(re.search(r'\bcomo\b|\bpuedo\b|\bse puede\b|\bque pasa\b', t))
+    mentions_turn = bool(re.search(r'turno|cita|ficha|numero', t))
+    staff = role in ('employee', 'admin')
+
+    # ── Acciones de empleado/admin ──
+    if staff and not is_how_question:
+        if re.search(r'\b(llama|llamar|llame)\b', t) or re.search(r'\bsiguiente\b', t):
+            data = _execute_tool('llamar_siguiente_turno', {'service_type': ''}, username, role)
+            if data.get('number'):
+                return f"Listo, llamé al turno **{data['number']}**."
+            return "No hay turnos en espera en este momento."
+        if re.search(r'\b(finaliza|finalizar|completa|completar|termina|terminar|atendido)\b', t):
+            data = _execute_tool('completar_turno_actual', {}, username, role)
+            if data.get('number'):
+                return f"Listo, el turno **{data['number']}** quedó finalizado."
+            return "No hay ningún turno en atención para finalizar."
+        if re.search(r'estadistica|reporte|resumen', t):
+            d = _execute_tool('obtener_estadisticas', {}, username, role)
+            return (f"Estadísticas de turnos:\n\n• Total: {d.get('total', 0)}\n• En espera: {d.get('waiting', 0)}\n"
+                    f"• Llamados: {d.get('called', 0)}\n• Finalizados: {d.get('finished', 0)}\n"
+                    f"• Cancelados: {d.get('cancelled', 0)}")
+
+    # ── Cancelar turno ──
+    if re.search(r'cancel|anul|elimin|borr|quita', t) and mentions_turn and not is_how_question:
+        number = _turn_number_in(message)
+        if not number:
+            active = _active_turn(username)
+            if not active:
+                return "No tienes ningún turno activo para cancelar."
+            number = active.get('number', '')
+        data = _execute_tool('cancelar_turno', {'turn_number': number}, username, role)
+        if data.get('success'):
+            return f"Listo, cancelé tu turno **{number}**."
+        return f"No pude cancelar el turno {number}: {data.get('error', 'intenta de nuevo')}."
+
+    # ── Pedir / crear turno ──
+    wants_turn = re.search(
+        r'\b(pide|pideme|pedir|pida|saca|sacame|sacar|crea|creame|crear|agenda|agendame|agendar|'
+        r'solicita|solicitame|solicitar|dame|quiero|necesito|reserva|reservame|reservar|genera|generame)\b', t)
+    if wants_turn and mentions_turn and not is_how_question:
+        service_type = _detect_service_type(t)
+        sede_id = '' if service_type == 'virtual' else _detect_sede_id(t)
+        data = _execute_tool('crear_turno', {'service_type': service_type, 'sede_id': sede_id}, username, role)
+        if data.get('number'):
+            reply = f"Listo, tu turno **{data['number']}** ({_SERVICE_LABELS[service_type]}) fue creado."
+            active = _active_turn(username)
+            if active and active.get('sede'):
+                reply += f"\n\nSede: {active['sede']}"
+            if data.get('meet_link'):
+                reply += f"\n\nEnlace de la videollamada: {data['meet_link']}"
+            if data.get('fine_notice'):
+                reply += f"\n\n{data['fine_notice']}"
+            return reply
+        if data.get('existing_number'):
+            where = f" en {data['existing_sede']}" if data.get('existing_sede') else ''
+            return (f"{data.get('error', 'Ya tienes un turno activo')}: **{data['existing_number']}**{where}. "
+                    "Si quieres uno nuevo, primero dime \"cancela mi turno\".")
+        return f"No pude crear el turno: {data.get('error', 'intenta de nuevo')}."
+
+    # ── Posición en la fila ──
+    if re.search(r'posicion|cuantos? (me )?falta|cuantos hay|cuanto (me )?falta|delante|antes que yo|'
+                 r'en la fila|cuando me (llaman|toca)', t):
+        active = _active_turn(username)
+        if not active:
+            return "No tienes ningún turno activo. Si quieres, dime \"pídeme un turno\"."
+        pos, _ = get_position_service(active.get('number', ''))
+        if pos.get('position'):
+            return (f"Tu turno **{active['number']}** está en la posición **{pos['position']}** "
+                    f"(faltan {pos.get('turns_ahead', 0)} turnos antes del tuyo).")
+        status = _STATUS_LABELS.get(active.get('status'), active.get('status', ''))
+        return f"Tu turno **{active['number']}** está {status}."
+
+    # ── Historial ──
+    if re.search(r'mis turnos|historial', t):
+        data, _ = get_my_turns_service(username)
+        turns = data.get('turns', [])[:5]
+        if not turns:
+            return "Aún no tienes turnos registrados."
+        lines = [f"• {x['number']} — {_STATUS_LABELS.get(x['status'], x['status'])} ({x.get('sede', '')})" for x in turns]
+        return "Tus últimos turnos:\n\n" + "\n".join(lines)
+
+    # ── Turno activo ──
+    if re.search(r'mi turno|tengo (un )?turno|estado de mi|cual es mi', t):
+        active = _active_turn(username)
+        if not active:
+            return "No tienes ningún turno activo en este momento."
+        return (f"Tu turno activo es **{active['number']}** — "
+                f"{_SERVICE_LABELS.get(active.get('service_type'), '')}, "
+                f"{_STATUS_LABELS.get(active.get('status'), '')}, sede {active.get('sede', '')}.")
+
+    # ── Sedes ──
+    if re.search(r'\bsedes?\b|oficinas', t):
+        data, _ = get_sedes_service()
+        sedes = data.get('sedes', [])
+        if not sedes:
+            return "No hay sedes disponibles en este momento."
+        return "Sedes disponibles:\n\n" + "\n".join(
+            f"• {s['name']} — {s.get('city', '')} {s.get('address', '')}".rstrip() for s in sedes)
+
+    return None

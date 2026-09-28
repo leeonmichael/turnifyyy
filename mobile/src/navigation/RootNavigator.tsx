@@ -11,6 +11,7 @@ import RegisterScreen from '../screens/RegisterScreen';
 import HomeScreen from '../screens/HomeScreen';
 import MyTurnsScreen from '../screens/MyTurnsScreen';
 import ProfileScreen from '../screens/ProfileScreen';
+import ChatbotScreen from '../screens/ChatbotScreen';
 
 const AuthStack = createNativeStackNavigator();
 const Tabs = createBottomTabNavigator();
@@ -46,6 +47,11 @@ function AppNavigator() {
         name="MisTurnos"
         component={MyTurnsScreen}
         options={{ title: 'Mis Turnos', tabBarIcon: ({ focused }) => <TabIcon label="📋" focused={focused} /> }}
+      />
+      <Tabs.Screen
+        name="Asistente"
+        component={ChatbotScreen}
+        options={{ tabBarIcon: ({ focused }) => <TabIcon label="💬" focused={focused} /> }}
       />
       <Tabs.Screen
         name="Perfil"
