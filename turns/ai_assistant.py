@@ -416,24 +416,34 @@ def transcribe_audio(audio_bytes: bytes, mime_type: str) -> str:
         raise AIUnavailableError("Cliente de Gemini no configurado (falta GEMINI_API_KEY)")
 
     errors = []
-    for model in _transcription_models(client):
-        try:
-            response = client.models.generate_content(
-                model=model,
-                contents=[
-                    types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
-                    types.Part.from_text(
-                        text="Transcribe exactamente lo que se dice en este audio, en español. "
-                             "Responde únicamente con la transcripción, sin comentarios, comillas "
-                             "ni texto adicional."
-                    ),
-                ],
-            )
-            return (response.text or '').strip()
-        except Exception as e:
-            errors.append(f"{model}: {str(e)[:120]}")
-            print(f"[chatbot-voz] Falló la transcripción con {model} ({mime_type}, "
-                  f"{len(audio_bytes)} bytes): {e}", flush=True)
+    models = _transcription_models(client)
+    # Los 503 "high demand" / 429 de Google son momentáneos: si todos los
+    # modelos fallan, se espera un poco y se reintenta (hasta 3 vueltas).
+    for attempt, wait in enumerate((0, 1.5, 3)):
+        if wait:
+            time.sleep(wait)
+        errors = []
+        for model in models:
+            try:
+                response = client.models.generate_content(
+                    model=model,
+                    contents=[
+                        types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
+                        types.Part.from_text(
+                            text="Transcribe exactamente lo que se dice en este audio, en español. "
+                                 "Responde únicamente con la transcripción, sin comentarios, comillas "
+                                 "ni texto adicional."
+                        ),
+                    ],
+                )
+                return (response.text or '').strip()
+            except Exception as e:
+                errors.append(f"{model}: {str(e)[:120]}")
+                print(f"[chatbot-voz] Intento {attempt + 1}: falló la transcripción con {model} "
+                      f"({mime_type}, {len(audio_bytes)} bytes): {e}", flush=True)
+        # Solo vale la pena reintentar si todos los fallos fueron momentáneos.
+        if not all(re.search(r'\b(503|429|500|UNAVAILABLE|RESOURCE_EXHAUSTED|INTERNAL)\b', err) for err in errors):
+            break
     raise AIUnavailableError(' | '.join(errors) or 'Sin modelos disponibles')
 
 
@@ -458,14 +468,14 @@ def _transcription_models(client) -> list:
             print(f"[chatbot-voz] No se pudo listar los modelos: {e}", flush=True)
         # Versiones más nuevas primero; "-lite" después de su versión completa.
         found.sort(key=lambda n: ([-int(x) for x in re.findall(r'\d+', n)], 'lite' in n))
-        _available_flash_models = found[:4]
+        _available_flash_models = found[:6]
         print(f"[chatbot-voz] Modelos flash disponibles: {_available_flash_models}", flush=True)
 
     models = []
-    for m in [settings.GEMINI_MODEL, 'gemini-flash-latest', *_available_flash_models]:
+    for m in [settings.GEMINI_MODEL, 'gemini-flash-latest', 'gemini-2.5-flash', *_available_flash_models]:
         if m and m not in models:
             models.append(m)
-    return models[:4]
+    return models[:6]
 
 
 def get_proactive_message(turn_number: str, position: int) -> str:
@@ -503,6 +513,7 @@ def get_proactive_message(turn_number: str, position: int) -> str:
 # herramientas que el modelo (_execute_tool), así que respeta el rol del JWT.
 
 import re
+import time
 import unicodedata
 
 _SERVICE_LABELS = {
