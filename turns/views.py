@@ -31,7 +31,10 @@ from .turn_services import (
     get_all_turns_service, get_statistics_service, VIRTUAL_REQUIRED_DOCUMENTS,
 )
 from .storage_helpers import upload_virtual_document_file
-from .ai_assistant import get_chatbot_reply_stream, get_proactive_message, get_fallback_reply, AIUnavailableError
+from .ai_assistant import (
+    get_chatbot_reply_stream, get_proactive_message, get_fallback_reply,
+    transcribe_audio, AIUnavailableError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1397,13 +1400,22 @@ def chatbot_view(request):
     if not message:
         return JsonResponse({'error': 'Mensaje vacío'}, status=400)
 
-    gen = get_chatbot_reply_stream(message=message, history=history, username=username, role=role)
+    return _chatbot_reply_response(message, history, username, role)
 
-    ai_unavailable_response = JsonResponse({
+
+def _ai_unavailable_response():
+    return JsonResponse({
         'error': 'ai_unavailable',
         'message': 'El asistente de IA no está disponible en este momento. '
                    'Intenta de nuevo más tarde o usa las opciones del menú.',
     }, status=503)
+
+
+def _chatbot_reply_response(message, history, username, role, prefix_events=()):
+    """Respuesta NDJSON del asistente, compartida por el chat escrito y el de
+    voz. prefix_events se emiten antes de la respuesta (ej. la transcripción
+    de la nota de voz, para que la app la muestre como mensaje del usuario)."""
+    prefix = ''.join(json.dumps(e) + '\n' for e in prefix_events)
 
     def fallback_response():
         # Sin IA: si el mensaje es una orden ("pídeme un turno", "cancela mi
@@ -1414,11 +1426,12 @@ def chatbot_view(request):
         except Exception:
             reply = None
         if not reply:
-            return ai_unavailable_response
-        body = (json.dumps({'type': 'chunk', 'text': reply}) + '\n'
+            return _ai_unavailable_response()
+        body = (prefix + json.dumps({'type': 'chunk', 'text': reply}) + '\n'
                 + json.dumps({'type': 'done', 'actions_taken': []}) + '\n')
         return HttpResponse(body, content_type='application/x-ndjson')
 
+    gen = get_chatbot_reply_stream(message=message, history=history, username=username, role=role)
     try:
         first_event = next(gen)
     except (AIUnavailableError, StopIteration):
@@ -1429,11 +1442,60 @@ def chatbot_view(request):
         return fallback_response()
 
     def event_stream():
+        if prefix:
+            yield prefix
         yield json.dumps(first_event) + '\n'
         for event in gen:
             yield json.dumps(event) + '\n'
 
     return StreamingHttpResponse(event_stream(), content_type='application/x-ndjson')
+
+
+@csrf_exempt
+@jwt_required
+def chatbot_voice_view(request):
+    """Igual que chatbot_view, pero recibe una nota de voz grabada en la app
+    móvil (multipart: 'audio' + 'history'). La web transcribe en el propio
+    navegador con la Web Speech API; React Native no tiene ese API, así que
+    aquí se transcribe con Gemini y luego se ejecuta la orden dicha."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Método no permitido'}, status=405)
+
+    payload  = request.jwt_payload
+    username = payload.get('username', '')
+    role     = payload.get('role', 'client')
+
+    audio_file = request.FILES.get('audio')
+    if not audio_file:
+        return JsonResponse({'error': 'Audio requerido'}, status=400)
+
+    try:
+        history = json.loads(request.POST.get('history') or '[]')
+    except (ValueError, TypeError):
+        history = []
+
+    content_type = (audio_file.content_type or '').lower()
+    name = (audio_file.name or '').lower()
+    if 'm4a' in content_type or name.endswith('.m4a') or 'mp4' in content_type:
+        mime_type = 'audio/mp4'
+    elif content_type.startswith('audio/'):
+        mime_type = content_type
+    else:
+        mime_type = 'audio/mp4'
+
+    try:
+        transcript = transcribe_audio(audio_file.read(), mime_type)
+    except AIUnavailableError:
+        return _ai_unavailable_response()
+
+    if not transcript:
+        # La app muestra "No logré entender el audio" con 422.
+        return JsonResponse({'error': 'No se pudo entender el audio. Intenta de nuevo.'}, status=422)
+
+    return _chatbot_reply_response(
+        transcript, history, username, role,
+        prefix_events=[{'type': 'transcript', 'text': transcript}],
+    )
 
 
 @csrf_exempt
