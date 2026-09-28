@@ -1485,8 +1485,13 @@ def chatbot_voice_view(request):
 
     try:
         transcript = transcribe_audio(audio_file.read(), mime_type)
-    except AIUnavailableError:
-        return _ai_unavailable_response()
+    except AIUnavailableError as e:
+        # 'detail' permite ver en el chat por qué falló (cuota, API key...).
+        return JsonResponse({
+            'error': 'ai_unavailable',
+            'message': 'No se pudo transcribir el audio en este momento.',
+            'detail': str(e)[:300],
+        }, status=503)
 
     if not transcript:
         # La app muestra "No logré entender el audio" con 422.

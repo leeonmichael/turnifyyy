@@ -234,7 +234,15 @@ export class Chatbot implements OnInit, AfterViewChecked, OnDestroy {
         } else if (err?.status === 401) {
           this.micError = 'Tu sesión expiró. Vuelve a iniciar sesión.';
         } else {
-          this.micError = 'El asistente de voz no está disponible en este momento. Escribe tu mensaje, por favor.';
+          // Se muestra el motivo que devuelve el servidor (cuota de Gemini,
+          // API key...) para poder diagnosticar el problema.
+          let detail = '';
+          try {
+            const body = typeof err?.error === 'string' ? JSON.parse(err.error) : err?.error;
+            detail = body?.detail || body?.message || '';
+          } catch { /* respuesta no JSON */ }
+          this.micError = `El asistente de voz no está disponible en este momento (código ${err?.status ?? '?'}` +
+            `${detail ? ': ' + detail.slice(0, 160) : ''}). Escribe tu mensaje, por favor.`;
         }
         this.cdr.detectChanges();
       },

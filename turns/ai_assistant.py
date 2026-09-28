@@ -407,28 +407,39 @@ def _reply_without_model_text(message: str, actions_taken: list, username: str, 
 
 
 def transcribe_audio(audio_bytes: bytes, mime_type: str) -> str:
-    """Transcribe una nota de voz a texto con Gemini (usado por el chat por
-    voz de la app móvil — el navegador web ya transcribe en el cliente con
-    la Web Speech API, así que este camino es exclusivo de React Native)."""
+    """Transcribe una nota de voz a texto con Gemini (chat por voz de la web
+    y de la app móvil). Si el modelo principal falla (cuota agotada, modelo
+    no disponible...), se prueba con otros modelos, que en el plan gratuito
+    tienen cuotas independientes."""
     client = _get_client()
     if not client:
-        raise AIUnavailableError("Cliente de Gemini no configurado")
+        raise AIUnavailableError("Cliente de Gemini no configurado (falta GEMINI_API_KEY)")
 
-    try:
-        response = client.models.generate_content(
-            model=settings.GEMINI_MODEL,
-            contents=[
-                types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
-                types.Part.from_text(
-                    text="Transcribe exactamente lo que se dice en este audio, en español. "
-                         "Responde únicamente con la transcripción, sin comentarios, comillas "
-                         "ni texto adicional."
-                ),
-            ],
-        )
-        return (response.text or '').strip()
-    except Exception as e:
-        raise AIUnavailableError(str(e))
+    models = []
+    for m in (settings.GEMINI_MODEL, 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'):
+        if m and m not in models:
+            models.append(m)
+
+    last_error = None
+    for model in models:
+        try:
+            response = client.models.generate_content(
+                model=model,
+                contents=[
+                    types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
+                    types.Part.from_text(
+                        text="Transcribe exactamente lo que se dice en este audio, en español. "
+                             "Responde únicamente con la transcripción, sin comentarios, comillas "
+                             "ni texto adicional."
+                    ),
+                ],
+            )
+            return (response.text or '').strip()
+        except Exception as e:
+            last_error = e
+            print(f"[chatbot-voz] Falló la transcripción con {model} ({mime_type}, "
+                  f"{len(audio_bytes)} bytes): {e}", flush=True)
+    raise AIUnavailableError(str(last_error))
 
 
 def get_proactive_message(turn_number: str, position: int) -> str:
