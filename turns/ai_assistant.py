@@ -259,13 +259,27 @@ def _build_request(message: str, history: list, username: str, role: str):
     """Arma la lista de `contents` (historial + mensaje nuevo) y el
     `GenerateContentConfig` (system prompt + contexto + herramientas del
     rol) — compartido entre la variante normal y la de streaming."""
+    items = [h for h in (history or [])[-10:] if h.get('text')]
+    # La web manda el mensaje actual también dentro del historial: se quita
+    # para no enviarlo dos veces seguidas.
+    if items and items[-1].get('role') != 'bot' and items[-1].get('text', '').strip() == message.strip():
+        items.pop()
+    # Gemini espera que la conversación empiece por el usuario y alterne
+    # roles: se descartan los mensajes iniciales del bot (el saludo) y se
+    # unen los mensajes consecutivos del mismo rol.
+    while items and items[0].get('role') == 'bot':
+        items.pop(0)
     contents = []
-    for h in (history or [])[-10:]:
+    for h in items:
         turn_role = 'model' if h.get('role') == 'bot' else 'user'
-        text = h.get('text', '')
-        if text:
-            contents.append(types.Content(role=turn_role, parts=[types.Part.from_text(text=text)]))
-    contents.append(types.Content(role='user', parts=[types.Part.from_text(text=message)]))
+        if contents and contents[-1].role == turn_role:
+            contents[-1].parts.append(types.Part.from_text(text=h['text']))
+        else:
+            contents.append(types.Content(role=turn_role, parts=[types.Part.from_text(text=h['text'])]))
+    if contents and contents[-1].role == 'user':
+        contents[-1].parts.append(types.Part.from_text(text=message))
+    else:
+        contents.append(types.Content(role='user', parts=[types.Part.from_text(text=message)]))
 
     config = types.GenerateContentConfig(
         system_instruction=SYSTEM_PROMPT + _build_context_note(username),
@@ -302,13 +316,13 @@ def get_chatbot_reply_stream(message: str, history: list, username: str, role: s
                 model=settings.GEMINI_MODEL, contents=contents, config=config,
             )
 
-            fc = None
+            fcs = None
             fc_content = None
             any_text = False
 
             for chunk in stream:
                 if chunk.function_calls:
-                    fc = chunk.function_calls[0]
+                    fcs = chunk.function_calls
                     fc_content = chunk.candidates[0].content
                     break
                 piece = chunk.text or ''
@@ -316,25 +330,80 @@ def get_chatbot_reply_stream(message: str, history: list, username: str, role: s
                     any_text = True
                     yield {'type': 'chunk', 'text': piece}
 
-            if fc is None:
+            if fcs is None:
                 if not any_text:
-                    yield {'type': 'chunk', 'text': "No logré entender tu mensaje, ¿puedes reformularlo?"}
+                    # Gemini a veces termina sin texto (sobre todo justo después
+                    # de ejecutar una herramienta): en vez de decir "no te
+                    # entendí", se informa lo que se hizo o se ejecuta la orden
+                    # con el respaldo por reglas.
+                    yield {'type': 'chunk', 'text': _reply_without_model_text(message, actions_taken, username, role)}
                 yield {'type': 'done', 'actions_taken': actions_taken}
                 return
 
-            args = dict(fc.args) if fc.args else {}
-            result = _execute_tool(fc.name, args, username, role)
-            actions_taken.append({"tool": fc.name, "args": args, "result": result})
+            # El modelo puede pedir varias herramientas en paralelo: cada
+            # function_call necesita su function_response o Gemini rechaza la
+            # siguiente ronda.
+            responses = []
+            for fc in fcs:
+                args = dict(fc.args) if fc.args else {}
+                result = _execute_tool(fc.name, args, username, role)
+                actions_taken.append({"tool": fc.name, "args": args, "result": result})
+                responses.append(types.Part.from_function_response(name=fc.name, response={"result": result}))
 
             contents.append(fc_content)
-            contents.append(types.Content(role='user', parts=[
-                types.Part.from_function_response(name=fc.name, response={"result": result})
-            ]))
+            contents.append(types.Content(role='user', parts=responses))
 
-        yield {'type': 'chunk', 'text': "Hice varias acciones, pero necesito que me confirmes cuál es el siguiente paso."}
+        yield {'type': 'chunk', 'text': _summarize_actions(actions_taken)}
         yield {'type': 'done', 'actions_taken': actions_taken}
     except Exception as e:
-        yield {'type': 'error', 'message': str(e)}
+        if actions_taken:
+            # La acción ya se ejecutó: se informa en vez de devolver error
+            # (si no, el respaldo de la vista la intentaría ejecutar de nuevo).
+            yield {'type': 'chunk', 'text': _summarize_actions(actions_taken)}
+            yield {'type': 'done', 'actions_taken': actions_taken}
+        else:
+            yield {'type': 'error', 'message': str(e)}
+
+
+def _summarize_actions(actions_taken: list) -> str:
+    """Texto para el usuario a partir del resultado de la última acción."""
+    if not actions_taken:
+        return "Listo."
+    last = actions_taken[-1]
+    tool, result = last['tool'], last.get('result') or {}
+    if result.get('error'):
+        extra = f": **{result['existing_number']}**" if result.get('existing_number') else ''
+        return f"No se pudo completar la acción. {result['error']}{extra}."
+    if tool == 'crear_turno' and result.get('number'):
+        reply = f"Listo, tu turno **{result['number']}** fue creado."
+        if result.get('meet_link'):
+            reply += f"\n\nEnlace de la videollamada: {result['meet_link']}"
+        return reply
+    if tool == 'cancelar_turno' and result.get('success'):
+        return f"Listo, cancelé tu turno **{result.get('number', '')}**."
+    if tool == 'llamar_siguiente_turno':
+        return f"Listo, llamé al turno **{result['number']}**." if result.get('number') else "No hay turnos en espera."
+    if tool == 'completar_turno_actual' and result.get('number'):
+        return f"Listo, el turno **{result['number']}** quedó finalizado."
+    if tool == 'consultar_mi_turno':
+        turn = result.get('turn')
+        return (f"Tu turno activo es **{turn['number']}**." if turn
+                else "No tienes ningún turno activo en este momento.")
+    if tool == 'consultar_posicion' and result.get('position'):
+        return (f"Estás en la posición **{result['position']}** "
+                f"(faltan {result.get('turns_ahead', 0)} turnos antes del tuyo).")
+    return "Listo, ya realicé la acción que pediste."
+
+
+def _reply_without_model_text(message: str, actions_taken: list, username: str, role: str) -> str:
+    if actions_taken:
+        return _summarize_actions(actions_taken)
+    try:
+        reply = get_fallback_reply(message, username, role)
+    except Exception:
+        reply = None
+    return reply or ("¿Me lo puedes decir de otra forma? Por ejemplo: \"pídeme un turno\", "
+                     "\"cancela mi turno\", \"¿cuál es mi turno?\" o \"¿cuántos faltan?\".")
 
 
 def transcribe_audio(audio_bytes: bytes, mime_type: str) -> str:
