@@ -8,6 +8,10 @@ Las herramientas del modelo llaman a turns/turn_services.py — la misma capa
 que usan los endpoints HTTP — para que el chatbot y el resto de la app nunca
 diverjan en cómo se crea, cancela o consulta un turno.
 """
+import itertools
+import re
+import time
+
 from django.conf import settings
 from .turn_services import (
     create_turn_service, cancel_own_turn_service, get_my_active_turn_service,
@@ -312,9 +316,7 @@ def get_chatbot_reply_stream(message: str, history: list, username: str, role: s
 
     try:
         for _ in range(MAX_TOOL_ROUNDS):
-            stream = client.models.generate_content_stream(
-                model=settings.GEMINI_MODEL, contents=contents, config=config,
-            )
+            stream = _open_stream_with_fallback(client, contents, config)
 
             fcs = None
             fc_content = None
@@ -363,6 +365,35 @@ def get_chatbot_reply_stream(message: str, history: list, username: str, role: s
             yield {'type': 'done', 'actions_taken': actions_taken}
         else:
             yield {'type': 'error', 'message': str(e)}
+
+
+_TRANSIENT_ERROR = r'\b(503|429|500|UNAVAILABLE|RESOURCE_EXHAUSTED|INTERNAL)\b'
+
+
+def _open_stream_with_fallback(client, contents, config):
+    """Abre el stream de respuesta probando varios modelos, con reintentos
+    si Google responde "saturado" (503/429). Se lee el primer fragmento
+    dentro del try porque es ahí donde Gemini devuelve esos errores; una vez
+    que llega, se devuelve el stream completo (primer fragmento incluido)."""
+    models = _transcription_models(client)
+    errors = []
+    for attempt, wait in enumerate((0, 1.5, 3)):
+        if wait:
+            time.sleep(wait)
+        errors = []
+        for model in models:
+            try:
+                stream = iter(client.models.generate_content_stream(
+                    model=model, contents=contents, config=config,
+                ))
+                first = next(stream, None)
+                return itertools.chain([first] if first is not None else [], stream)
+            except Exception as e:
+                errors.append(f"{model}: {str(e)[:120]}")
+                print(f"[chatbot] Intento {attempt + 1}: falló {model}: {e}", flush=True)
+        if not all(re.search(_TRANSIENT_ERROR, err) for err in errors):
+            break
+    raise AIUnavailableError(' | '.join(errors))
 
 
 def _summarize_actions(actions_taken: list) -> str:
@@ -512,8 +543,6 @@ def get_proactive_message(turn_number: str, position: int) -> str:
 # ("pídeme un turno", "cancela mi turno", "¿cuántos faltan?"). Usa las mismas
 # herramientas que el modelo (_execute_tool), así que respeta el rol del JWT.
 
-import re
-import time
 import unicodedata
 
 _SERVICE_LABELS = {

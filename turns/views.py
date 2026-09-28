@@ -1425,6 +1425,12 @@ def _chatbot_reply_response(message, history, username, role, prefix_events=()):
             reply = get_fallback_reply(message, username, role)
         except Exception:
             reply = None
+        if not reply and prefix_events:
+            # Nota de voz: la transcripción sí funcionó, así que se devuelve
+            # para que se vea lo que dijo el usuario, con un aviso en vez de 503.
+            reply = ('En este momento el asistente de IA está muy ocupado y no pude responder '
+                     'esa pregunta. Puedo ejecutar órdenes como "pídeme un turno", '
+                     '"cancela mi turno", "¿cuál es mi turno?" o "¿cuántos faltan?".')
         if not reply:
             return _ai_unavailable_response()
         body = (prefix + json.dumps({'type': 'chunk', 'text': reply}) + '\n'
